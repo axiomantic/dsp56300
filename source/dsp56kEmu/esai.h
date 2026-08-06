@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "dma.h"
 #include "esxi.h"
 #include "dsp56kBase/logging.h"
 #include "dsp56kBase/bitfield.h"
@@ -263,7 +264,16 @@ namespace dsp56k
 			M_IF0 = 0,					// Serial Input Flag 0
 		};
 
-		explicit Esai(IPeripherals& _periph, EMemArea _area, Dma* _dma = nullptr);
+		// The DMA request source pair is a construction parameter, in the same
+		// way that HDI08 selects its pair by chip variant. ESAI_1 triggers
+		// Esai1ReceiveData and Esai1TransmitData, and the primary ESAI keeps
+		// the pair named in the defaults.
+		explicit Esai(IPeripherals& _periph, EMemArea _area, Dma* _dma = nullptr,
+			DmaChannel::RequestSource _dmaReceiveSource = DmaChannel::RequestSource::EsaiReceiveData,
+			DmaChannel::RequestSource _dmaTransmitSource = DmaChannel::RequestSource::EsaiTransmitData);
+
+		DmaChannel::RequestSource getDmaReceiveSource() const	{ return m_dmaReceiveSource; }
+		DmaChannel::RequestSource getDmaTransmitSource() const	{ return m_dmaTransmitSource; }
 
 		void reset();
 		void setDSP(DSP* _dsp);
@@ -435,6 +445,8 @@ namespace dsp56k
 		const EMemArea m_area;
 		const TWord m_vba;							// base address for interrupts differs between ESAI and ESAI_1 (on DSP 56367)
 		Dma* const m_dma;
+		const DmaChannel::RequestSource m_dmaReceiveSource;
+		const DmaChannel::RequestSource m_dmaTransmitSource;
 		Bitfield<uint32_t, SrBits, 18> m_sr;		// status register
 		TWord m_cr = 0;								// control register
 
