@@ -14,4 +14,4 @@ function(dsp56k_add_test _name)
 	set_tests_properties(${_name} PROPERTIES LABELS "UnitTest;dsp56300;nmg2")
 endfunction()
 
-# The list is empty. Each task adds its own entry.
+dsp56k_add_test(dsp56k_peripheral_type)			# DSP-5
