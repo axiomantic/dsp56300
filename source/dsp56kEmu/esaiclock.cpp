@@ -246,7 +246,7 @@ namespace dsp56k
 	// ______________________
 	//
 
-	EsaiClock::EsaiClock(Peripherals56362& _peripherals) : EsxiClock(_peripherals)
+	EsaiClock::EsaiClock(IPeripherals& _peripherals) : EsxiClock(_peripherals)
 	{
 	}
 

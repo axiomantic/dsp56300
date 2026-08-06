@@ -3,6 +3,7 @@
 #include "dsp.h"
 #include "interrupts.h"
 #include "peripherals.h"
+#include "peripherals56311.h"
 
 namespace dsp56k
 {
@@ -205,6 +206,10 @@ namespace dsp56k
 
 			// Note: cannot cast m_periph directly here because we might be a Y peripheral
 			if(auto* p = dynamic_cast<Peripherals56362*>(m_periph.getDSP().getPeriph(0)))
+				p->getEsaiClock().restartClock();
+			else if(auto* p = dynamic_cast<Peripherals56311*>(m_periph.getDSP().getPeriph(1)))
+				p->getEsaiClock().restartClock();
+			else if(auto* p = dynamic_cast<Peripherals56311*>(m_periph.getDSP().getPeriph(0)))
 				p->getEsaiClock().restartClock();
 			execTX();
 		}

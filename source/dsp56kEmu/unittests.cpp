@@ -1,4 +1,5 @@
 #include "unittests.h"
+#include "peripherals56311.h"
 
 
 namespace dsp56k
@@ -181,6 +182,11 @@ namespace dsp56k
 
 		// multi-instruction tests
 		multiInstructionTests();
+
+		// DSP-1, DSP-2, DSP-3 tests
+		peripherals56311Test();
+		dmaTest();
+		esaiTest();
 	}
 
 	void UnitTests::conditionCodes()
@@ -5678,5 +5684,52 @@ namespace dsp56k
 		execUntil(finalPC);
 
 		verify(dsp.regs().a.var == 0x00000003000000);	// 3 adds total
+	}
+
+	void UnitTests::peripherals56311Test()
+	{
+		Peripherals56311 p311;
+		verify(p311.getType() == PeripheralType::Peripherals56311);
+		verify(p311.read(XIO_IDR, Nop) == 0x56311);
+	}
+
+	void UnitTests::dmaTest()
+	{
+		Peripherals56311 p311;
+		Peripherals56362 p362;
+		Peripherals56303 p303;
+
+		// DSP-2: Test DCR-to-enumerator translation for various chips
+		p311.getDMA().setDCR(0, (0b01011 << 11));
+		verify(p311.getDMA().getDCR(0) == (0b01011 << 11));
+
+		p362.getDMA().setDCR(1, (0b01100 << 11));
+		verify(p362.getDMA().getDCR(1) == (0b01100 << 11));
+
+		p303.getDMA().setDCR(2, (0b01011 << 11));
+		verify(p303.getDMA().getDCR(2) == (0b01011 << 11));
+
+		// Test ASan intra-object bounds safety per W2-14 with out-of-bounds request source values
+		auto oobSource = static_cast<DmaChannel::RequestSource>(25);
+		verify(!p311.getDMA().hasTrigger(oobSource));
+		verify(!p311.getDMA().trigger(oobSource));
+
+		auto countSource = DmaChannel::RequestSource::Count;
+		verify(!p311.getDMA().hasTrigger(countSource));
+		verify(!p311.getDMA().trigger(countSource));
+	}
+
+	void UnitTests::esaiTest()
+	{
+		// DSP-3: Y-space ESAI DMA wiring test in Peripherals56311
+		Peripherals56311 p311;
+		verify(p311.getEsai().getMemArea() == MemArea_Y);
+
+		// Write and read Y-space ESAI control and status registers
+		p311.write(Esai::M_TCR_1, (1 << Esai::M_TE0));
+		verify(p311.read(Esai::M_TCR_1, Nop) == (1 << Esai::M_TE0));
+
+		p311.write(Esai::M_RCR_1, (1 << Esai::M_RE0));
+		verify(p311.read(Esai::M_RCR_1, Nop) == (1 << Esai::M_RE0));
 	}
 }

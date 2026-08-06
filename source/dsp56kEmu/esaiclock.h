@@ -104,7 +104,7 @@ namespace dsp56k
 	class EsaiClock : public EsxiClock
 	{
 	public:
-		EsaiClock(Peripherals56362& _peripherals);
+		EsaiClock(IPeripherals& _peripherals);
 		template<bool ExpectedResult> TWord getRemainingInstructionsForTransmitFrameSync() const;
 		template<bool ExpectedResult> TWord getRemainingInstructionsForReceiveFrameSync() const;
 	};

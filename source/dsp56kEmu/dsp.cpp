@@ -13,6 +13,7 @@
 #include "debuggerinterface.h"
 #include "dspconfig.h"
 #include "interrupts.h"
+#include "peripherals56311.h"
 
 #include "dsp_decode.inl"
 
@@ -63,11 +64,14 @@ namespace dsp56k
 		return nullptr;
 	}
 
+
 	DSP::TInterruptFunc findExecPeripheralsFunc(IPeripherals* _pX, IPeripherals* _pY) noexcept
 	{
 		if(const auto func = findExecPeripheralsFuncT<Peripherals56362, PeripheralsNop>(_pX, _pY))		return func;
 		if(const auto func = findExecPeripheralsFuncT<Peripherals56362, Peripherals56367>(_pX, _pY))	return func;
 		if(const auto func = findExecPeripheralsFuncT<Peripherals56303, PeripheralsNop>(_pX, _pY))		return func;
+		if(const auto func = findExecPeripheralsFuncT<Peripherals56311, PeripheralsNop>(_pX, _pY))		return func;
+		if(const auto func = findExecPeripheralsFuncT<PeripheralsNop, Peripherals56311>(_pX, _pY))		return func;
 		if(const auto func = findExecPeripheralsFuncT<PeripheralsNop, PeripheralsNop>(_pX, _pY))		return func;
 		assert(false && "Peripherals configuration is not supported");
 		return nullptr;

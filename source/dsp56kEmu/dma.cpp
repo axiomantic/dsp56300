@@ -4,6 +4,7 @@
 
 #include "dsp.h"
 #include "peripherals.h"
+#include "peripherals56311.h"
 #include "utils.h"
 
 #include <cstring> // memcpy
@@ -42,7 +43,6 @@ namespace dsp56k
 
 		bool checkTrigger(Peripherals56303& _p, const RequestSource _src)
 		{
-			return false;
 			switch (_src)
 			{
 			case RequestSource::Essi0TransmitData:			return _p.getEssi0().getSR().test(Essi::SSISR_TDE);
@@ -59,7 +59,6 @@ namespace dsp56k
 
 		bool checkTrigger(Peripherals56362& _p, const RequestSource _src)
 		{
-			return false;
 			switch (_src)
 			{
 			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
@@ -70,6 +69,31 @@ namespace dsp56k
 				assert("Unsupported request source for 56362");
 				return false;
 			}
+		}
+
+		bool checkTrigger(Peripherals56311& _p, const RequestSource _src)
+		{
+			switch (_src)
+			{
+			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
+			case RequestSource::EsaiTransmitData:			return _p.getEsai().getSR().test(Esai::M_TDE);
+			case RequestSource::HostReceiveData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HRDF);
+			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
+			default:
+				assert("Unsupported request source for 56311");
+				return false;
+			}
+		}
+
+		bool checkTrigger(IPeripherals& _p, const RequestSource _src)
+		{
+			if (_p.getType() == PeripheralType::Peripherals56303)
+				return checkTrigger(static_cast<Peripherals56303&>(_p), _src);
+			if (_p.getType() == PeripheralType::Peripherals56362)
+				return checkTrigger(static_cast<Peripherals56362&>(_p), _src);
+			if (_p.getType() == PeripheralType::Peripherals56311)
+				return checkTrigger(static_cast<Peripherals56311&>(_p), _src);
+			return false;
 		}
 	}
 
@@ -199,20 +223,13 @@ namespace dsp56k
 			return;
 		}
 
-		if(m_peripherals.getType() == PeripheralType::Peripherals56303)
+		if(m_peripherals.getType() == PeripheralType::Peripherals56303 ||
+		   m_peripherals.getType() == PeripheralType::Peripherals56362 ||
+		   m_peripherals.getType() == PeripheralType::Peripherals56311)
 		{
-			auto* p303 = static_cast<Peripherals56303*>(&m_peripherals);
 			m_dma.addTriggerTarget(this);
 			m_armed = true;
-			if(checkTrigger(*p303, reqSrc))
-				triggerByRequest();
-		}
-		else if(m_peripherals.getType() == PeripheralType::Peripherals56362)
-		{
-			auto* p362 = static_cast<Peripherals56362*>(&m_peripherals);
-			m_dma.addTriggerTarget(this);
-			m_armed = true;
-			if(checkTrigger(*p362, reqSrc))
+			if(checkTrigger(m_peripherals, reqSrc))
 				triggerByRequest();
 		}
 		else
@@ -303,7 +320,47 @@ namespace dsp56k
 
 	DmaChannel::RequestSource DmaChannel::getRequestSource() const
 	{
-		return static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+		const uint32_t drs = (m_dcr >> 11) & 0x1f;
+
+		if (drs <= 9)
+		{
+			return static_cast<RequestSource>(drs);
+		}
+
+		const auto periphType = m_peripherals.getType();
+		if (periphType == PeripheralType::Peripherals56303)
+		{
+			switch (drs)
+			{
+			case 10: return RequestSource::Essi0ReceiveData;
+			case 11: return RequestSource::Essi0TransmitData;
+			case 12: return RequestSource::Essi1ReceiveData;
+			case 13: return RequestSource::Essi1TransmitData;
+			case 19: return RequestSource::Hi08ReceiveDataFull;
+			case 20: return RequestSource::Hi08TransmitDataEmpty;
+			default: return RequestSource::Dsp56303Reserved;
+			}
+		}
+		else if (periphType == PeripheralType::Peripherals56362 || periphType == PeripheralType::Peripherals56311)
+		{
+			switch (drs)
+			{
+			case 10: return RequestSource::DaxTransmitData;
+			case 11: return RequestSource::EsaiReceiveData;
+			case 12: return RequestSource::EsaiTransmitData;
+			case 13: return RequestSource::ShiHtxEmpty;
+			case 14: return RequestSource::ShiFifoNotEmpty;
+			case 15: return RequestSource::ShiFifoFull;
+			case 16: return RequestSource::HostReceiveData;
+			case 17: return RequestSource::HostTransmitData;
+			case 18: return RequestSource::Timer0;
+			case 19: return RequestSource::Timer1;
+			case 20: return RequestSource::Timer2;
+			default: return RequestSource::Dsp56362Reserved;
+			}
+		}
+
+		return RequestSource::Dsp56303Reserved;
 	}
 
 	TWord DmaChannel::getAddressMode() const
@@ -800,13 +857,21 @@ namespace dsp56k
 
 	bool Dma::hasTrigger(DmaChannel::RequestSource _source) const
 	{
-		const auto& channels = m_requestTargets[static_cast<uint32_t>(_source)];
+		const auto idx = static_cast<uint32_t>(_source);
+		if (idx >= m_requestTargets.size())
+			return false;
+
+		const auto& channels = m_requestTargets[idx];
 		return !channels.empty();
 	}
 
 	bool Dma::trigger(DmaChannel::RequestSource _source) const
 	{
-		const auto& channels = m_requestTargets[static_cast<uint32_t>(_source)];
+		const auto idx = static_cast<uint32_t>(_source);
+		if (idx >= m_requestTargets.size())
+			return false;
+
+		const auto& channels = m_requestTargets[idx];
 
 		if (channels.empty())
 			return false;
@@ -820,8 +885,11 @@ namespace dsp56k
 	void Dma::addTriggerTarget(DmaChannel* _channel)
 	{
 		auto src = _channel->getRequestSource();
+		const auto idx = static_cast<uint32_t>(src);
+		if (idx >= m_requestTargets.size())
+			return;
 
-		auto& channels = m_requestTargets[static_cast<uint32_t>(src)];
+		auto& channels = m_requestTargets[idx];
 
 		channels.push_back(_channel);
 	}
@@ -829,8 +897,11 @@ namespace dsp56k
 	void Dma::removeTriggerTarget(const DmaChannel* _channel)
 	{
 		auto src = _channel->getRequestSource();
+		const auto idx = static_cast<uint32_t>(src);
+		if (idx >= m_requestTargets.size())
+			return;
 
-		auto& channels = m_requestTargets[static_cast<uint32_t>(src)];
+		auto& channels = m_requestTargets[idx];
 
 		auto it = std::find(channels.begin(), channels.end(), _channel);
 		if (it != channels.end())

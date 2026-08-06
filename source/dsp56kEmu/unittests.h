@@ -170,6 +170,11 @@ namespace  dsp56k
 		void do_multi();
 		void jsr_rts();
 
+		// DSP-1, DSP-2, DSP-3 tests
+		void peripherals56311Test();
+		void dmaTest();
+		void esaiTest();
+
 		Peripherals56362 peripheralsX;
 		Peripherals56367 peripheralsY;
 		Memory mem;

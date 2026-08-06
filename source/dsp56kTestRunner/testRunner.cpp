@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 
 #include "dsp56kEmu/dspconfig.h"
 #include "dsp56kEmu/assemblertest.h"
@@ -8,6 +9,11 @@
 
 int main(int _argc, char* _argv[])
 {
+	if (_argc > 1)
+	{
+		std::cout << "Running test runner for target: " << _argv[1] << std::endl;
+	}
+
 	std::cout << "Running Assembler Tests..." << std::endl;
 	try
 	{

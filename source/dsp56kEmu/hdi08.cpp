@@ -1,6 +1,7 @@
 #include "dsp.h"
 #include "interrupts.h"
 #include "hdi08.h"
+#include "peripherals56311.h"
 
 namespace dsp56k
 {
@@ -15,6 +16,9 @@ namespace dsp56k
 			return &p->getDMA();
 
 		if(auto* p = dynamic_cast<Peripherals56362*>(&_peripherals))
+			return &p->getDMA();
+
+		if(auto* p = dynamic_cast<Peripherals56311*>(&_peripherals))
 			return &p->getDMA();
 
 		return nullptr;
