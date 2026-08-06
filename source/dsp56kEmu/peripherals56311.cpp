@@ -123,7 +123,11 @@ namespace dsp56k
 		, m_mem{}
 		, m_dma(*this)
 		, m_esaiX(*this, MemArea_X, &m_dma)
-		, m_esaiY(*this, MemArea_Y)
+		// The second ESAI receives the DMA controller this set owns, and the
+		// ESAI_1 request source pair. Without both, channel 3 and channel 5
+		// never fire: Esai::m_dma defaults to nullptr and both trigger calls
+		// sit behind a guard that is false.
+		, m_esaiY(*this, MemArea_Y, &m_dma, DmaChannel::RequestSource::Esai1ReceiveData, DmaChannel::RequestSource::Esai1TransmitData)
 		, m_hdi08(*this)
 		, m_timers(*this, Vba_TIMER0_Compare)
 		, m_ySpace(m_esaiY, _secondBusFrameRateHz)
