@@ -17,3 +17,5 @@ endfunction()
 dsp56k_add_test(dsp56k_peripheral_type)			# DSP-5
 dsp56k_add_test(dsp56k_peripherals56311_surface)	# DSP-1
 dsp56k_add_test(dsp56k_find_exec_peripherals)	# DSP-6
+dsp56k_add_test(dsp56k_check_trigger_overload)	# DSP-4
+dsp56k_add_test(dsp56k_peripheral_type_dispatch)	# DSP-4
