@@ -45,6 +45,7 @@ opcodefields.h
 opcodeinfo.h
 opcodetypes.h
 peripherals.cpp peripherals.h
+peripherals56311.cpp peripherals56311.h
 registers.cpp registers.h
 timers.cpp timers.h
 types.cpp types.h
@@ -134,3 +135,8 @@ endif()
 # This should use ${PROJECT_SOURCE_DIR}/source if the top level of the repo
 # has the top level cmakelists.txt file.
 target_include_directories(dsp56kEmu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+if(BUILD_TESTING)
+	add_subdirectory(test)
+endif()
+
