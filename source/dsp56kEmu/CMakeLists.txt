@@ -45,6 +45,7 @@ opcodefields.h
 opcodeinfo.h
 opcodetypes.h
 peripherals.cpp peripherals.h
+peripherals56311.cpp peripherals56311.h
 registers.cpp registers.h
 timers.cpp timers.h
 types.cpp types.h

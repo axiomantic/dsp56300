@@ -15,3 +15,4 @@ function(dsp56k_add_test _name)
 endfunction()
 
 dsp56k_add_test(dsp56k_peripheral_type)			# DSP-5
+dsp56k_add_test(dsp56k_peripherals56311_surface)	# DSP-1
