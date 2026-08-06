@@ -79,6 +79,8 @@ namespace dsp56k
 			{
 			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
 			case RequestSource::EsaiTransmitData:			return _p.getEsai().getSR().test(Esai::M_TDE);
+			case RequestSource::Esai1ReceiveData:			return _p.getEsai1().getSR().test(Esai::M_RDF);
+			case RequestSource::Esai1TransmitData:			return _p.getEsai1().getSR().test(Esai::M_TDE);
 			case RequestSource::HostReceiveData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HRDF);
 			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
 			default:
@@ -329,7 +331,21 @@ namespace dsp56k
 
 	DmaChannel::RequestSource DmaChannel::getRequestSource() const
 	{
-		return static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+		const auto raw = static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+
+		// This function is chip-agnostic, so the ESAI_1 translation is gated.
+		// An ungated remap would change the decode for the 56303 and the 56362.
+		if(m_peripherals.getType() != PeripheralType::Peripherals56311)
+			return raw;
+
+		// The hardware DCR field and the library enumerator are two number
+		// spaces, and this is the single definition site of the difference.
+		switch (raw)
+		{
+		case RequestSource::Dsp56303Reserved:	return RequestSource::Esai1ReceiveData;		// hardware 21
+		case RequestSource::Esai1ReceiveData:	return RequestSource::Esai1TransmitData;	// hardware 22
+		default:								return raw;
+		}
 	}
 
 	TWord DmaChannel::getAddressMode() const

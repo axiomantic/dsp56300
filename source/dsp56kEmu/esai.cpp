@@ -6,7 +6,11 @@
 
 namespace dsp56k
 {
-	Esai::Esai(IPeripherals& _periph, const EMemArea _area, Dma* _dma/* = nullptr*/) : m_periph(_periph), m_area(_area), m_vba((_area == MemArea_Y) ? (Vba_ESAI_1_Receive_Data - Vba_ESAI_Receive_Data) : 0), m_dma(_dma)
+	Esai::Esai(IPeripherals& _periph, const EMemArea _area, Dma* _dma/* = nullptr*/,
+		const DmaChannel::RequestSource _dmaReceiveSource/* = EsaiReceiveData*/,
+		const DmaChannel::RequestSource _dmaTransmitSource/* = EsaiTransmitData*/)
+		: m_periph(_periph), m_area(_area), m_vba((_area == MemArea_Y) ? (Vba_ESAI_1_Receive_Data - Vba_ESAI_Receive_Data) : 0), m_dma(_dma)
+		, m_dmaReceiveSource(_dmaReceiveSource), m_dmaTransmitSource(_dmaTransmitSource)
 	{
 		m_tx.fill(0);
 		m_rx.fill(0);
@@ -363,7 +367,7 @@ namespace dsp56k
 		m_sr.set(M_RDF);
 
 		if(m_dma)
-			m_dma->trigger(DmaChannel::RequestSource::EsaiReceiveData);
+			m_dma->trigger(m_dmaReceiveSource);
 	}
 
 	void Esai::writeSlotToFrame()
@@ -387,7 +391,7 @@ namespace dsp56k
 		m_writtenTX = 0;
 
 		if(m_dma)
-			m_dma->trigger(DmaChannel::RequestSource::EsaiTransmitData);
+			m_dma->trigger(m_dmaTransmitSource);
 	}
 
 	void Esai::writeTSMA(const TWord _tsma)

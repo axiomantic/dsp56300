@@ -84,10 +84,21 @@ namespace dsp56k
 			Hi08TransmitDataEmpty = 0b10100, // Host transmit data empty (HTDE = 1)
 			Dsp56303Reserved      = 0b10101,
 
-			Count = Dsp56303Reserved
+			// DSP56311 - the second ESAI. The hardware DCR field for this pair
+			// is 21 and 22, and DmaChannel::getRequestSource translates it,
+			// gated on PeripheralType::Peripherals56311. 0b10101 (21) is taken
+			// twice already, so the library values start one above it.
+			Esai1ReceiveData      = 0b10110, // ESAI_1 receive data (RDF=1)
+			Esai1TransmitData     = 0b10111, // ESAI_1 transmit data (TDE=1)
+
+			Count                 = 0b11000
 		};
 
-		static_assert(RequestSource::Dsp56362Reserved == RequestSource::Dsp56303Reserved, "update definition of Count in request sources");
+		// Count is the size of Dma::m_requestTargets, so it must stay above
+		// every defined request source. The three named here are the maxima.
+		static_assert(RequestSource::Count > RequestSource::Esai1TransmitData, "update Count when a request source is added");
+		static_assert(RequestSource::Count > RequestSource::Dsp56303Reserved, "update Count when a request source is added");
+		static_assert(RequestSource::Count > RequestSource::Dsp56362Reserved, "update Count when a request source is added");
 
 		enum class TransferMode
 		{
