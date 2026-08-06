@@ -4,6 +4,7 @@
 
 #include "dsp.h"
 #include "peripherals.h"
+#include "peripherals56311.h"
 #include "utils.h"
 
 #include <cstring> // memcpy
@@ -68,6 +69,20 @@ namespace dsp56k
 			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
 			default:
 				assert("Unsupported request source for 56362");
+				return false;
+			}
+		}
+
+		bool checkTrigger(Peripherals56311& _p, const RequestSource _src)
+		{
+			switch (_src)
+			{
+			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
+			case RequestSource::EsaiTransmitData:			return _p.getEsai().getSR().test(Esai::M_TDE);
+			case RequestSource::HostReceiveData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HRDF);
+			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
+			default:
+				assert(false && "Unsupported request source for 56311");
 				return false;
 			}
 		}
@@ -213,6 +228,17 @@ namespace dsp56k
 			m_dma.addTriggerTarget(this);
 			m_armed = true;
 			if(checkTrigger(*p362, reqSrc))
+				triggerByRequest();
+		}
+		else if(m_peripherals.getType() == PeripheralType::Peripherals56311)
+		{
+			// The 56311 set presents two faces and both carry this enumerator,
+			// but only the X-space face owns a Dma, so m_peripherals is always
+			// the X-space face here.
+			auto* p311 = static_cast<Peripherals56311*>(&m_peripherals);
+			m_dma.addTriggerTarget(this);
+			m_armed = true;
+			if(checkTrigger(*p311, reqSrc))
 				triggerByRequest();
 		}
 		else
