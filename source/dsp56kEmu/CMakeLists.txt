@@ -134,3 +134,5 @@ endif()
 # This should use ${PROJECT_SOURCE_DIR}/source if the top level of the repo
 # has the top level cmakelists.txt file.
 target_include_directories(dsp56kEmu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+add_subdirectory(test)
