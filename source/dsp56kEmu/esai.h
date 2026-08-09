@@ -270,7 +270,8 @@ namespace dsp56k
 		// the pair named in the defaults.
 		explicit Esai(IPeripherals& _periph, EMemArea _area, Dma* _dma = nullptr,
 			DmaChannel::RequestSource _dmaReceiveSource = DmaChannel::RequestSource::EsaiReceiveData,
-			DmaChannel::RequestSource _dmaTransmitSource = DmaChannel::RequestSource::EsaiTransmitData);
+			DmaChannel::RequestSource _dmaTransmitSource = DmaChannel::RequestSource::EsaiTransmitData,
+			bool _useRingBuffers = true);
 
 		DmaChannel::RequestSource getDmaReceiveSource() const	{ return m_dmaReceiveSource; }
 		DmaChannel::RequestSource getDmaTransmitSource() const	{ return m_dmaTransmitSource; }
