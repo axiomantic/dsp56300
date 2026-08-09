@@ -8,8 +8,10 @@ namespace dsp56k
 {
 	Esai::Esai(IPeripherals& _periph, const EMemArea _area, Dma* _dma/* = nullptr*/,
 		const DmaChannel::RequestSource _dmaReceiveSource/* = EsaiReceiveData*/,
-		const DmaChannel::RequestSource _dmaTransmitSource/* = EsaiTransmitData*/)
-		: m_periph(_periph), m_area(_area), m_vba((_area == MemArea_Y) ? (Vba_ESAI_1_Receive_Data - Vba_ESAI_Receive_Data) : 0), m_dma(_dma)
+		const DmaChannel::RequestSource _dmaTransmitSource/* = EsaiTransmitData*/,
+		const bool _useRingBuffers/* = true*/)
+		: Esxi(_useRingBuffers)
+		, m_periph(_periph), m_area(_area), m_vba((_area == MemArea_Y) ? (Vba_ESAI_1_Receive_Data - Vba_ESAI_Receive_Data) : 0), m_dma(_dma)
 		, m_dmaReceiveSource(_dmaReceiveSource), m_dmaTransmitSource(_dmaTransmitSource)
 	{
 		m_tx.fill(0);
