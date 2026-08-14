@@ -1,5 +1,3 @@
-// The findExecPeripheralsFunc line for the 56311 pair.
-//
 // DSP::findExecPeripheralsFunc selects the peripheral-exec function by
 // dynamic_cast against hard-coded type combinations, and its else is
 // assert(false && "Peripherals configuration is not supported") with a null

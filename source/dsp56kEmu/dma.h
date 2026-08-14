@@ -95,7 +95,7 @@ namespace dsp56k
 		};
 
 		// Count is the size of Dma::m_requestTargets, so it must stay above
-		// every defined request source. The three named here are the maxima.
+		// every defined request source.
 		static_assert(RequestSource::Count > RequestSource::Esai1TransmitData, "update Count when a request source is added");
 		static_assert(RequestSource::Count > RequestSource::Dsp56303Reserved, "update Count when a request source is added");
 		static_assert(RequestSource::Count > RequestSource::Dsp56362Reserved, "update Count when a request source is added");
