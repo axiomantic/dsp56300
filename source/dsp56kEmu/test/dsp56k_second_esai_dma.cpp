@@ -1,13 +1,8 @@
-// DSP-3 - a Dma for the Y-space ESAI.
-//
 // Esai::m_dma is a constructor argument that defaults to nullptr, and
 // Peripherals56367 passes none, so both m_dma->trigger(...) calls sit behind a
 // guard that is false. The 56311 set must construct its SECOND Esai with the
 // DMA controller it owns, and with the ESAI_1 request source pair, or channel 3
 // and channel 5 never fire.
-//
-// The test arms channel 3 on the hardware DCR field the firmware writes, 21,
-// drives one ESAI_1 receive slot, and asserts the word moved.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"

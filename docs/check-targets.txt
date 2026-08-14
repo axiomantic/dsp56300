@@ -10,13 +10,6 @@
 # The condition is asserted only for tasks a lint run declares complete, so a
 # target added before its task completes would make the lint fail on work that
 # has not happened yet.
-#
-# DSP-0 creates the test directory and its CMake list. It registers no check
-# target of its own, so it adds no line here. Each later task adds its own.
-#
-# Seven of the nine dsp56k_ names are declared below. The two that are absent
-# are DSP-11's dsp56k_interpreter and dsp56k_jit. DSP-11 is CONDITIONAL: it
-# exists only if SPK-1 reports a non-empty intersection, and it has not run.
 
 #
 # A line carries the target name and nothing else. The loader takes the whole
