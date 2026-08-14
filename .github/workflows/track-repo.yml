@@ -1,5 +1,3 @@
-# The repo track's reusable workflow.
-#
 # A per-track unit is a REUSABLE WORKFLOW and it contributes a JOB, not a step.
 # GitHub resolves a local reusable workflow only as `./.github/workflows/<file>`,
 # and nothing outside a callee workflow can insert a step into it. Each track

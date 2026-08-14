@@ -18,10 +18,10 @@ guessed:
 **Upstream's default branch is `dsp56300`, not `main`.** Confirm it rather than
 assuming it: `git ls-remote --symref upstream HEAD` answers `refs/heads/dsp56300`,
 and `git symbolic-ref refs/remotes/upstream/HEAD` answers the same locally. The
-ref choice decides the answer. Measured on 2026-08-13, `upstream/dsp56300` gives
-25 paths across 17 commits, all authored here; `upstream/main` gives 54 paths
-across 47 commits, 30 of which upstream authored on the `dsp56300` branch. A
-comparison against `upstream/main` therefore reports other people's code as ours.
+ref choice decides the answer: the `upstream/main` base includes commits that
+upstream authored on the `dsp56300` branch, and the `upstream/dsp56300` base
+includes none. A comparison against `upstream/main` therefore reports other
+people's code as ours.
 
 ```bash
 git fetch upstream
