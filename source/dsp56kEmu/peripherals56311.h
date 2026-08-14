@@ -3,8 +3,8 @@
 // DSP56311 peripheral set for the Nord Modular G2.
 //
 // The set presents TWO IPeripherals faces, because the DSP selects the face by
-// address space before the virtual call (dsp.cpp:1018 and dsp.cpp:1078) and its
-// constructor asserts that the two pointers differ (dsp.cpp:88).
+// address space before the virtual call, and its constructor asserts that the
+// two pointers differ.
 //
 //   Peripherals56311   the X-space face. It owns every block.
 //   Peripherals56311Y  the Y-space face. It is a register window over the

@@ -1,17 +1,3 @@
-// DSP-4, part 1 - the third checkTrigger overload.
-//
-// checkTrigger is NOT a member of DmaChannel. It is two free functions in an
-// anonymous namespace in dma.cpp, one for Peripherals56303 and one for
-// Peripherals56362, and EACH OPENS WITH return false; above an unreachable
-// switch. This task adds a third overload for a Peripherals56311.
-//
-// The overload cannot be named from here, so the test observes the answer
-// through the only thing the answer changes: DmaChannel::arm calls
-// triggerByRequest when checkTrigger returns true, and a word-trigger channel
-// then moves one word. The negative case runs the SAME condition on a
-// Peripherals56362, where the upstream return false; must keep the word where
-// it was. Without that half the test would accept any answer.
-
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"
 #include "dsp56kEmu/peripherals56311.h"
@@ -70,13 +56,11 @@ namespace
 
 		armWordChannel(p.getDMA(), mem, g_hardwareEsaiTransmitData);
 
-		// The third overload answered true, so arm() triggered the channel.
 		verify(mem.get(MemArea_X, g_destination) == g_payload);
 	}
 
-	// The negative case. Upstream's checkTrigger(Peripherals56362&, ...) opens
-	// with return false;. Leave it alone: five shipping products run on this
-	// path, and this half is what makes the positive half falsifiable.
+	// Upstream's checkTrigger(Peripherals56362&, ...) opens with return false;.
+	// Leave it alone: five shipping products run on this path.
 	void theOverloadIsNotSelectedForA56362()
 	{
 		Peripherals56362 p;

@@ -1,13 +1,11 @@
-// DSP-1 - the 56311 peripheral set, composed.
-//
 // The set presents two IPeripherals faces. Peripherals56311 is the X-space
 // face and owns every block. Peripherals56311Y is the Y-space face: a register
 // window over the ESAI_1 instance the X-space face owns.
 //
 // The set constructs ZERO EsaiClock objects. The scheduler drives both ESAI
 // frames, and Esai::execTX and Esai::execRX are public. That invariant is
-// asserted here at COMPILE TIME, in three ways, because a runtime counter
-// would need a change to an upstream header.
+// asserted at COMPILE TIME, because a runtime counter would need a change to
+// an upstream header.
 
 #include "dsp56kEmu/peripherals56311.h"
 #include "dsp56kEmu/unittests.h"
@@ -169,7 +167,6 @@ namespace
 		p.write(Esai::M_TSMA_1, 0x00feed);
 		verify(p.getEsai1().readTSMA() == esaiYTsmaBefore);
 
-		// The X face DOES answer its own ESAI's name.
 		p.write(Esai::M_TSMA, 0x001234);
 		verify(p.getEsai().readTSMA() == 0x001234);
 		verify(p.read(Esai::M_TSMA, Instruction::Nop) == 0x001234);
