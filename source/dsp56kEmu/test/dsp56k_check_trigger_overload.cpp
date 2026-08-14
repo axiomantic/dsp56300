@@ -60,7 +60,7 @@ namespace
 	}
 
 	// Upstream's checkTrigger(Peripherals56362&, ...) opens with return false;.
-	// Leave it alone: five shipping products run on this path.
+	// Leave it alone: shipping products run on this path.
 	void theOverloadIsNotSelectedForA56362()
 	{
 		Peripherals56362 p;
