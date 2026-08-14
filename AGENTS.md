@@ -44,6 +44,84 @@ project registers are required checks — plus the project lint steps. Read the
 registered names out of a configured build tree rather than counting them by
 hand.
 
+## Build and test
+
+### Narrow — our own tests
+
+**There is no useful configure-time narrowing here, and that is a real answer
+rather than a missing one.** The only option the root tree declares is
+`DSP56300_DEBUGGER`, which is off by default and only ADDS the wxWidgets
+debugger; everything else — `asmjit`, `dsp56kBase`, `dsp56kEmu`, the test
+runner, the disassembler — is unconditional. `dsp56kEmu` dominates the build and
+every test this project registers links it, so a target-narrowed build saves
+little. Build everything and narrow the RUN.
+
+**Use the preset.** It carries the label selection and the build tree, so
+neither has to be typed.
+
+```bash
+cmake --preset nmg2
+cmake --build --preset nmg2
+ctest --preset nmg2
+```
+
+`cmake --list-presets`, `--list-presets=build` and `--list-presets=test` name
+the rest. **The presets live in `CMakeUserPresets.json`, which `.gitignore`
+excludes.** Upstream owns `CMakePresets.json`; a fork that overwrote it would
+conflict on every merge. So the presets are LOCAL TO THIS MACHINE — a fresh
+clone has only the raw form.
+
+The raw form, which is what the preset expands to:
+
+```bash
+cmake -S . -B <build> -DCMAKE_BUILD_TYPE=Debug
+cmake --build <build> --parallel
+ctest --test-dir <build> --no-tests=error -L nmg2 --output-on-failure
+```
+
+`-L nmg2` selects by the label `source/dsp56kEmu/test/CMakeLists.txt` attaches
+to every test it registers. Prefer it to a `-R '^dsp56k_'` name pattern: the
+label is set at the registration site, so a test added there joins the selection
+without an edit here.
+
+`--no-tests=error` has no test-preset field. The preset carries it as the
+environment variable `CTEST_NO_TESTS_ACTION`, which needs CMake 3.26 or later.
+On an older CTest the preset runs without that guard while the raw form keeps it.
+
+**The build preset narrows nothing** and does not pretend to, for the reason
+above. It exists so the out-of-tree build path is not typed.
+
+### Full
+
+```bash
+cmake --preset full
+cmake --build --preset full
+ctest --preset full
+```
+
+The raw form:
+
+```bash
+cmake -S . -B <build> -DCMAKE_BUILD_TYPE=Debug
+cmake --build <build> --parallel
+ctest --test-dir <build> --no-tests=error --output-on-failure
+```
+
+The difference is the RUN, not the build: the full run adds upstream's
+`dsp56300_unitTests`, the `dsp56kBase` tests and asmjit's own. Use it whenever a
+change touches inherited code — our label covers our tests and says nothing
+about what we broke underneath them.
+
+**Neither run reaches the consumer.** `gearmulator` takes this repository as the
+submodule `source/dsp56300`, and a change here is invisible there until that
+submodule pin moves. A change to `dsp56kEmu`'s public surface needs a build in
+that fork as well.
+
+On this host `xcode-select` points at CommandLineTools while full Xcode is
+installed. The Unix-Makefiles configure resolves an SDK without help; prefix
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` only if a step fails
+to find one.
+
 ## Comments
 
 Comments are sparse. Write one only where a reader must otherwise reconstruct a
@@ -59,11 +137,27 @@ Never write these in a comment:
   test is the only durable statement about coverage.
 - **A note about history** ("this used to...", "an earlier version..."). Git
   holds that.
+- **An enumeration whose length is the claim.** A stale enumeration is a stale
+  count with the number spelled out. Delete the word "four" from "any of those
+  four values" and the list above it still says four. It goes wrong by the
+  mechanism the word did.
+- **A path that does not resolve.** A comment that names a file, a script, a
+  test, or a type must name one that exists.
 
 **One exception, and it is the only one.** A number that a mechanism reads and
 checks at build time or at test time may stay. The check is then the source of
 truth, not the comment, and it fails loudly when the number drifts. A number
 that no mechanism reads is a liability.
+
+**The path rule is the one a machine can decide, and that is why it is stated
+apart from the others.** Each other rule here needs a reader's judgement about
+what a sentence claims. "Every path-shaped token resolves" is a regular
+expression and a file test. Write the check. Do not trust a sweep to hold.
+
+**A path that MOVED is corrected. A path that never existed is deleted.** A moved
+path has a correct target, so give it one. A named script that exists nowhere has
+no target, so the sentence goes — unless the sentence records a known GAP, and
+then the gap moves to a tracked item BEFORE the comment goes.
 
 **A date does not rescue a stale claim.** Within a day of churn a date
 discriminates nothing.
