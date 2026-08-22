@@ -738,9 +738,10 @@ namespace dsp56k
 			return true;
 		}
 
-		if(agmS == AddressGenMode::SingleCounterApostInc && agmD == AddressGenMode::DualCounterDOR1)
+		if(agmS == AddressGenMode::SingleCounterApostInc && agmD <= AddressGenMode::DualCounterDOR3)
 		{
-			// 2D mode, can be either line or word
+			// 2D mode, can be either line or word. AGM 0-3 select the DOR slot
+			// whose offset is applied after each line.
 
 			const auto tm = getTransferMode();
 			const auto isLineTransfer = tm == TransferMode::LineTriggerRequestClearDE;
@@ -750,7 +751,7 @@ namespace dsp56k
 				memWrite(areaD, m_ddr, memRead(areaS, m_dsr));
 				++m_dsr;
 
-				if(dualModeIncrement(m_ddr, m_dma.getDOR(1)))
+				if(dualModeIncrement(m_ddr, m_dma.getDOR(static_cast<int>(agmD))))
 					return true;
 			}
 			while(isLineTransfer && m_dcol != m_dcolInit);
