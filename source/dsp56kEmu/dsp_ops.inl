@@ -272,7 +272,9 @@ namespace dsp56k
 	}
 	inline void DSP::op_DoForever(const TWord op)
 	{
-		errNotImplemented("DO FOREVER");
+		const TWord addr = absAddressExt<DoForever>();
+
+		do_exec( 0x7FFFFF, addr );
 	}
 	inline void DSP::op_Dor_ea(const TWord op)
 	{
