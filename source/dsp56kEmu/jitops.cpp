@@ -588,6 +588,14 @@ namespace dsp56k
 		do_exec( lc, addr );
 	}
 
+	void JitOps::op_DoForever(TWord op)
+	{
+		const TWord addr = absAddressExt<DoForever>();
+
+		DspValue lc(m_block, 0x7FFFFF, DspValue::Immediate24);
+		do_exec( lc, addr );
+	}
+
 	void JitOps::op_Do_S(TWord op)
 	{
 		const auto addr = absAddressExt<Do_S>();
