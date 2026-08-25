@@ -23,3 +23,4 @@ dsp56k_add_test(dsp56k_dma_request_source)		# DSP-2
 dsp56k_add_test(dsp56k_second_esai_dma)			# DSP-3
 dsp56k_add_test(dsp56k_dma_dor_generalization)	# DSP-20
 dsp56k_add_test(dsp56k_do_forever)				# DSP-21
+dsp56k_add_test(dsp56k_esai_receive_last_slot)	# DSP-22
