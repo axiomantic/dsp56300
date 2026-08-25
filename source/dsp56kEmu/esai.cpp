@@ -159,6 +159,14 @@ namespace dsp56k
 		{
 			m_rxSlotCounter = 0;
 			++m_rxFrameCounter;
+
+			// 56362 manual 8.4.3: the receive last slot request occurs "after
+			// the last slot of the frame ended", regardless of RSMA/RSMB - so
+			// it belongs on the wrap and outside the slotActive guard above.
+			// The transmit twin's placement is the same, even though TLIE is
+			// specified one slot earlier, at the START of the last slot.
+			if (m_rcr.test(M_RLIE))
+				injectInterrupt(Vba_ESAI_Receive_Last_Slot);
 		}
 	}
 
