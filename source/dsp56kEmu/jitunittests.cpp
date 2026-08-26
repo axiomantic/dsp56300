@@ -1,3 +1,5 @@
+#include <iostream>
+#include "jitdspregpool.h"
 #include "jitunittests.h"
 
 #include "jitasmjithelpers.h"
@@ -9,6 +11,16 @@
 
 namespace dsp56k
 {
+	namespace
+	{
+		// The CCR emitters take an accumulator, so the test has to hand them one in whatever representation
+		// the JIT currently uses. Left-aligned puts the 56-bit value in bits 63..8.
+		constexpr uint64_t aluTestValue(const uint64_t _v)
+		{
+			return g_leftAlignedAlu ? (_v << 8) : _v;
+		}
+	}
+
 	static constexpr bool g_useDspMode = true;
 
 	JitUnittests::JitUnittests(bool _logging/* = true*/)
@@ -154,7 +166,8 @@ namespace dsp56k
 			if(m_logging)
 				LOG("Running test code");
 
-			func(&dsp.regs(), 0xbadbc);
+			dsp.getJit().getTrampoline().execOne(&dsp.regs(), 0xbadbc, func);
+//			func(&dsp.getJit(), 0xbadbc);
 
 			if(m_logging)
 				LOG("Verifying test code");
@@ -192,10 +205,11 @@ namespace dsp56k
 
 	void JitUnittests::conversion_verify()
 	{
-		verify(m_checks[0] == 0x0000112233000000);
-		verify(m_checks[1] == 0x00ffffeedd000000);
-		verify(m_checks[2] == 0x00fffedcba000000);
-		verify(m_checks[3] == 0x0000445566000000);
+		// XY*to56 feeds ALU arithmetic, so the result follows the ALU representation
+		verify(m_checks[0] == aluTestValue(0x0000112233000000));
+		verify(m_checks[1] == aluTestValue(0x00ffffeedd000000));
+		verify(m_checks[2] == aluTestValue(0x00fffedcba000000));
+		verify(m_checks[3] == aluTestValue(0x0000445566000000));
 	}
 
 	void JitUnittests::signextend_build()
@@ -261,7 +275,7 @@ namespace dsp56k
 		{
 			RegGP r(*block);
 
-			block->asm_().mov(r, asmjit::Imm(m_checks[i]));
+			block->asm_().mov(r, asmjit::Imm(aluTestValue(m_checks[i])));
 			ops->ccr_u_update(r);
 			block->mem().mov(m_checks[i], block->regs().getSR(JitDspRegs::Read));
 		}
@@ -288,7 +302,7 @@ namespace dsp56k
 		{
 			RegGP r(*block);
 
-			block->asm_().mov(r, asmjit::Imm(m_checks[i]));
+			block->asm_().mov(r, asmjit::Imm(aluTestValue(m_checks[i])));
 			ops->ccr_e_update(r);
 			block->mem().mov(m_checks[i], block->regs().getSR(JitDspRegs::Read));
 
@@ -312,7 +326,7 @@ namespace dsp56k
 		{
 			RegGP r(*block);
 
-			block->asm_().mov(r, asmjit::Imm(m_checks[i]));
+			block->asm_().mov(r, asmjit::Imm(aluTestValue(m_checks[i])));
 			ops->ccr_n_update_by55(r);
 			block->mem().mov(m_checks[i], block->regs().getSR(JitDspRegs::Read));
 		}
@@ -337,7 +351,7 @@ namespace dsp56k
 		{
 			RegGP r(*block);
 
-			block->asm_().mov(r, asmjit::Imm(m_checks[i]));
+			block->asm_().mov(r, asmjit::Imm(aluTestValue(m_checks[i])));
 			block->asm_().clr(block->regs().getSR(JitDspRegs::Write));
 			ops->ccr_s_update(r);
 			block->mem().mov(m_checks[i], block->regs().getSR(JitDspRegs::Read));
@@ -493,15 +507,15 @@ namespace dsp56k
 	{
 		const RegGP temp(*block);
 
-		block->asm_().mov(temp, asmjit::Imm(0x00ff700000555555));
+		block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x00ff700000555555)));
 		ops->transferSaturation24(temp, temp);
 		block->mem().mov(m_checks[0], temp);
 
-		block->asm_().mov(temp, asmjit::Imm(0x00008abbcc555555));
+		block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x00008abbcc555555)));
 		ops->transferSaturation24(temp, temp);
 		block->mem().mov(m_checks[1], temp);
 
-		block->asm_().mov(temp, asmjit::Imm(0x0000334455667788));
+		block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x0000334455667788)));
 		ops->transferSaturation24(temp, temp);
 		block->mem().mov(m_checks[2], temp);
 	}
@@ -519,19 +533,19 @@ namespace dsp56k
 		{
 			const RegGP temp(*block);
 
-			block->asm_().mov(temp, asmjit::Imm(0x00ff700000555555));
+			block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x00ff700000555555)));
 			ops->transferSaturation48(temp, temp);
 			block->mem().mov(m_checks[0], temp);
 
-			block->asm_().mov(temp, asmjit::Imm(0x00008abbcc555555));
+			block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x00008abbcc555555)));
 			ops->transferSaturation48(temp, temp);
 			block->mem().mov(m_checks[1], temp);
 
-			block->asm_().mov(temp, asmjit::Imm(0x0000334455667788));
+			block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x0000334455667788)));
 			ops->transferSaturation48(temp, temp);
 			block->mem().mov(m_checks[2], temp);
 
-			block->asm_().mov(temp, asmjit::Imm(0x00fffefefefefefe));
+			block->asm_().mov(temp, asmjit::Imm(aluTestValue(0x00fffefefefefefe)));
 			ops->transferSaturation48(temp, temp);
 			block->mem().mov(m_checks[3], temp);
 		}, [&]()
@@ -546,7 +560,7 @@ namespace dsp56k
 
 	void JitUnittests::testCCCC(const int64_t _value, const int64_t _compareValue, const bool _lt, bool _le, bool _eq, bool _ge, bool _gt, bool _neq)
 	{
-		dsp.regs().a.var = _value;
+		dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(_value)));
 		runTest([&]()
 		{
 			const RegGP r(*block);
@@ -616,8 +630,8 @@ namespace dsp56k
 		{
 			m_checks.fill(0);
 
-			dsp.regs().a.var = 0;
-			dsp.regs().b.var = 0;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0)));
+			dsp.setALU(true , TReg56(static_cast<TReg56::MyType>(0)));
 
 			int i=0;
 			const RegGP r(*block);
@@ -648,14 +662,15 @@ namespace dsp56k
 		}, [&]()
 		{
 			int i=0;
-			verify(m_checks[i++] == 0x00000000111111);
-			verify(m_checks[i++] == 0x00000000222222);
-			verify(m_checks[i++] == 0x00111111111111);
-			verify(m_checks[i++] == 0x00222222222222);
-			verify(m_checks[i++] == 0x00111111000000);
-			verify(m_checks[i++] == 0x00222222000000);
-			verify(m_checks[i++] == 0x11111111000000);
-			verify(m_checks[i++] == 0x22222222000000);
+			// these read the raw accumulator, so the expected value follows the current representation
+			verify(m_checks[i++] == aluTestValue(0x00000000111111));
+			verify(m_checks[i++] == aluTestValue(0x00000000222222));
+			verify(m_checks[i++] == aluTestValue(0x00111111111111));
+			verify(m_checks[i++] == aluTestValue(0x00222222222222));
+			verify(m_checks[i++] == aluTestValue(0x00111111000000));
+			verify(m_checks[i++] == aluTestValue(0x00222222000000));
+			verify(m_checks[i++] == aluTestValue(0x11111111000000));
+			verify(m_checks[i++] == aluTestValue(0x22222222000000));
 		});
 
 		runTest([&]()
@@ -736,8 +751,8 @@ namespace dsp56k
 		runTest([&]()
 		{
 			m_checks.fill(0);
-			dsp.regs().a.var = 0x11112233445566;
-			dsp.regs().b.var = 0xff5566778899aa;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x11112233445566)));
+			dsp.setALU(true , TReg56(static_cast<TReg56::MyType>(0xff5566778899aa)));
 
 			int i=0;
 			DspValue r(*block);
@@ -852,8 +867,8 @@ namespace dsp56k
 		dsp.regs().la.var = 0x8899aa;
 		dsp.regs().lc.var = 0x99aabb;
 
-		dsp.regs().a.var = 0x00ffaabbcc112233;
-		dsp.regs().b.var = 0x00ee112233445566;
+		dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00ffaabbcc112233)));
+		dsp.setALU(true , TReg56(static_cast<TReg56::MyType>(0x00ee112233445566)));
 
 		dsp.regs().x.var = 0x0000aabbccddeeff;
 
@@ -915,8 +930,8 @@ namespace dsp56k
 		verify(r.la.var == 0x899aa0);
 		verify(r.lc.var == 0x9aabb0);
 
-		verify(r.a.var == 0x00f0abbcc0122330);
-		verify(r.b.var == 0x00e1122334455660);
+		verify(dsp.aluA().var == 0x00f0abbcc0122330);
+		verify(dsp.aluB().var == 0x00e1122334455660);
 
 		verify(r.x.var == 0x0000abbcc0deeff0);
 	}
@@ -952,7 +967,7 @@ namespace dsp56k
 		};
 
 		dsp.setSR(dsp.getSR().var & 0xfe);
-		dsp.regs().a.var = 0x00001000000000;
+		dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00001000000000)));
 		dsp.regs().y.var =   0x04444410c6f2;
 
 		runTest([&]()
@@ -969,7 +984,8 @@ namespace dsp56k
 		{
 			for(size_t i=0; i<24; ++i)
 			{
-				verify(m_checks[i] == expectedValues[i]);
+				// reads the raw accumulator, so the expected value follows the representation
+				verify(m_checks[i] == aluTestValue(expectedValues[i]));
 			}
 		});
 	}
@@ -980,7 +996,7 @@ namespace dsp56k
 			// regular mode for comparison
 
 			dsp.y0(0x218dec);
-			dsp.regs().a.var = 0x00008000000000;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00008000000000)));
 			dsp.setSR(0x0800d4);
 
 			static constexpr uint64_t expectedValues[24] =
@@ -1020,7 +1036,7 @@ namespace dsp56k
 				},
 					[&]()
 				{
-					verify(dsp.regs().a.var == static_cast<int64_t>(expectedValues[i]));
+					verify(dsp.aluA().var == static_cast<int64_t>(expectedValues[i]));
 				});
 			}
 		}
@@ -1028,7 +1044,7 @@ namespace dsp56k
 		runTest([&]()
 		{
 			dsp.y0(0x218dec);
-			dsp.regs().a.var = 0x00008000000000;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00008000000000)));
 			dsp.setSR(0x0800d4);
 
 			dsp.memory().set(MemArea_P, 0, 0x0618a0);	// rep #<18
@@ -1038,14 +1054,14 @@ namespace dsp56k
 		},
 		[&]()
 		{
-			verify(dsp.regs().a.var == 0xffeadd5401e848);
+			verify(dsp.aluA().var == 0xffeadd5401e848);
 			verify(dsp.getSR().var == 0x0800d4);
 		});
 		{
 			// regular mode for comparison
 
 			dsp.y0(0xde7214);
-			dsp.regs().a.var = 0x00008000000000;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00008000000000)));
 			dsp.setSR(0x0800d4);
 
 			static constexpr uint64_t expectedValues[24] =
@@ -1085,7 +1101,7 @@ namespace dsp56k
 				},
 					[&]()
 				{
-					verify(dsp.regs().a.var == static_cast<int64_t>(expectedValues[i]));
+					verify(dsp.aluA().var == static_cast<int64_t>(expectedValues[i]));
 				});
 			}
 		}
@@ -1093,7 +1109,7 @@ namespace dsp56k
 		runTest([&]()
 		{
 			dsp.y0(0xde7214);
-			dsp.regs().a.var = 0x00008000000000;
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00008000000000)));
 			dsp.setSR(0x0800d4);
 
 			dsp.memory().set(MemArea_P, 0, 0x0618a0);	// rep #<18
@@ -1103,7 +1119,7 @@ namespace dsp56k
 		},
 		[&]()
 		{
-			verify(dsp.regs().a.var == 0xffeadd5401e848);
+			verify(dsp.aluA().var == 0xffeadd5401e848);
 			verify(dsp.getSR().var == 0x0800d4);
 		});
 	}
