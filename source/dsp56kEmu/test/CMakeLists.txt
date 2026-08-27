@@ -26,3 +26,4 @@ dsp56k_add_test(dsp56k_do_forever)				# DSP-21
 dsp56k_add_test(dsp56k_esai_receive_last_slot)	# DSP-22
 dsp56k_add_test(dsp56k_dma_2d_source)			# DSP-23
 dsp56k_add_test(dsp56k_dma_unsupported_mode_report)	# DSP-23
+dsp56k_add_test(dsp56k_esai_tx_underrun_latch)	# DSP-24
