@@ -471,9 +471,23 @@ namespace dsp56k
 	//
 	bool DSP::do_exec( TWord _loopcount, TWord _addr )
 	{
+		return do_execImpl(_loopcount, _addr, false);
+	}
+
+	// DSP56300 Family Manual rev 2.0, DO FOREVER, p.13-60/13-61: LC is pushed onto the
+	// system stack but NOT written, LF and FV are both set, and LC is decremented on every
+	// wrap "without being tested". The only exits are ENDDO and BRKcc. The bounded-count
+	// shape does not exist on the part, so there is no loop count to pass here.
+	bool DSP::do_execForever( TWord _addr )
+	{
+		return do_execImpl(0, _addr, true);
+	}
+
+	bool DSP::do_execImpl( TWord _loopcount, TWord _addr, const bool _forever )
+	{
 	//	LOG( "DO BEGIN: " << (int)sc.var << ", loop flag = " << sr_test(SR_LF) );
 
-		if( !_loopcount )
+		if( !_forever && !_loopcount )
 		{
 			if( sr_test_noCache( SR_SC ) )
 				_loopcount = 65536;
@@ -488,13 +502,17 @@ namespace dsp56k
 		ssl(reg.lc);
 
 		reg.la.var = _addr;
-		reg.lc.var = _loopcount;
+
+		// DO FOREVER pushes LC but leaves it alone, so the program can seed it before the
+		// instruction and use it as its own pass counter.
+		if( !_forever )
+			reg.lc.var = _loopcount;
 
 		pushPCSR();
 
 		const auto stackCount = reg.sc.var;
-		
-		sr_set( SR_LF );
+
+		sr_set( _forever ? static_cast<SRMask>(SR_LF | SR_FV) : SR_LF );
 
 		++m_instructions;
 
@@ -515,7 +533,7 @@ namespace dsp56k
 			if(!sr_test_noCache(SR_LF))
 				break;
 
-			if( reg.lc.var <= 1 )
+			if( !_forever && reg.lc.var <= 1 )
 			{
 				// restore PC to point to the next instruction after the last instruction of the loop
 				setPC(reg.la.var+1);
@@ -524,7 +542,9 @@ namespace dsp56k
 				break;
 			}
 
-			--reg.lc.var;
+			// LC is 24 bits wide and a DO FOREVER loop decrements it past zero, so the
+			// wrap is part of the contract rather than an overflow to guard against.
+			reg.lc.var = (reg.lc.var - 1) & 0x00ffffff;
 			setPC(hiword(reg.ss[ssIndex()]));
 		}
 		return true;
@@ -535,8 +555,12 @@ namespace dsp56k
 	//
 	bool DSP::do_end()
 	{
-		// restore previous loop flag
-		sr_toggle( SR_LF, (ssl().var & SR_LF) != 0 );
+		// restore previous loop and forever flags. ENDDO and BRKcc are specified as
+		// SSL(LF,FV) -> SR, so FV travels with LF and a nested DO FOREVER cannot leave
+		// the flag standing over the loop that contained it.
+		const auto stackedSR = ssl().var;
+		sr_toggle( SR_LF, (stackedSR & SR_LF) != 0 );
+		sr_toggle( SR_FV, (stackedSR & SR_FV) != 0 );
 
 		// decrement SP twice, restoring old loop settings
 		decSP();

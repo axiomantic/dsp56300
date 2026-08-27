@@ -274,7 +274,7 @@ namespace dsp56k
 	{
 		const TWord addr = absAddressExt<DoForever>();
 
-		do_exec( 0x7FFFFF, addr );
+		do_execForever( addr );
 	}
 	inline void DSP::op_Dor_ea(const TWord op)
 	{

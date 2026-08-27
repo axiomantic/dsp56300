@@ -636,6 +636,7 @@ namespace dsp56k
 
 		// loops
 		void do_exec(const DspValue& _lc, TWord _addr);
+		void do_execForever(TWord _addr);
 		void do_end(const RegGP& _temp);
 		void do_end();
 		void rep_exec(TWord _lc);
