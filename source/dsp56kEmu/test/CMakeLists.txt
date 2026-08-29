@@ -26,3 +26,13 @@ dsp56k_add_test(dsp56k_do_forever)				# DSP-21
 dsp56k_add_test(dsp56k_esai_receive_last_slot)	# DSP-22
 dsp56k_add_test(dsp56k_dma_2d_source)			# DSP-23
 dsp56k_add_test(dsp56k_dma_unsupported_mode_report)	# DSP-23
+
+# TOOL-16 builds the tracecli tool against the same dsp56kEmu library the
+# tests link, so the test can invoke the tool's binary as a child process.
+set(TRACECLI_EXE $<TARGET_FILE:dsp56kTraceCli>)
+add_executable(t0_trace_cli t0_trace_cli.cpp)
+target_link_libraries(t0_trace_cli PRIVATE dsp56kEmu)
+target_compile_definitions(t0_trace_cli PRIVATE TRACECLI_BINARY="${TRACECLI_EXE}")
+set_property(TARGET t0_trace_cli PROPERTY FOLDER "dsp56300")
+add_test(NAME t0_trace_cli COMMAND t0_trace_cli)
+set_tests_properties(t0_trace_cli PROPERTIES LABELS "UnitTest;dsp56300;nmg2")
