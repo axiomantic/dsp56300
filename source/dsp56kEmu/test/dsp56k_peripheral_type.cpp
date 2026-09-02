@@ -1,4 +1,4 @@
-// DSP-5 - the fifth PeripheralType enumerator.
+// The fifth PeripheralType enumerator.
 //
 // The enumeration must hold FIVE distinct values, and the new one must equal
 // none of the four that precede it. A value added as a duplicate is a compile

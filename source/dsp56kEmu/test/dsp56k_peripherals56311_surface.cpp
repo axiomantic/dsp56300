@@ -1,4 +1,4 @@
-// DSP-1 - the 56311 peripheral set, composed.
+// The 56311 peripheral set, composed.
 //
 // The set presents two IPeripherals faces. Peripherals56311 is the X-space
 // face and owns every block. Peripherals56311Y is the Y-space face: a register

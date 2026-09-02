@@ -1,4 +1,4 @@
-# `dsp56kEmu` per-task tests
+# `dsp56kEmu` tests
 
 This directory holds the tests of the Nord Modular G2 emulator work on this
 fork. Upstream keeps its tests flat in `source/dsp56kEmu/` and drives all of

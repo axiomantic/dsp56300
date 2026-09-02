@@ -1,4 +1,4 @@
-// DSP-2 - the two new DMA request sources for ESAI_1.
+// The two new DMA request sources for ESAI_1.
 //
 // The hardware DCR field and the library enumerator are two number spaces for
 // the ESAI_1 pair. They agree for the primary ESAI and differ for ESAI_1:
@@ -10,8 +10,7 @@
 //   5          | ESAI_1 TX2   | 22                 | Esai1TransmitData  (23)
 //
 // DmaChannel::getRequestSource is chip-agnostic, so the translation is gated on
-// PeripheralType::Peripherals56311. This test asserts both directions AND that
-// the 56303 and the 56362 decode unchanged.
+// PeripheralType::Peripherals56311.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"
@@ -168,8 +167,7 @@ namespace
 	}
 
 	// The pair Esai triggers on is a construction parameter, in the same way
-	// that HDI08 selects its pair by chip variant. readSlotFromFrame and
-	// writeSlotToFrame hardcoded the primary pair before this task.
+	// that HDI08 selects its pair by chip variant.
 	void theEsaiTakesItsRequestSourcePairAsAParameter()
 	{
 		Peripherals56311 p(g_frameRate96k);

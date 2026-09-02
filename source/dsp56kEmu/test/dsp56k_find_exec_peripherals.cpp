@@ -1,4 +1,4 @@
-// DSP-6 - the findExecPeripheralsFunc line for the 56311 pair.
+// The findExecPeripheralsFunc line for the 56311 pair.
 //
 // DSP::findExecPeripheralsFunc selects the peripheral-exec function by
 // dynamic_cast against hard-coded type combinations, and its else is
@@ -16,8 +16,7 @@
 namespace dsp56k
 {
 	// Defined in dsp.cpp with external linkage and declared in no header. This
-	// re-declaration lets the test name it without a change to dsp.h, which
-	// DSP-6's Files: line does not carry.
+	// re-declaration lets the test name it without a change to dsp.h.
 	DSP::TInterruptFunc findExecPeripheralsFunc(IPeripherals* _pX, IPeripherals* _pY) noexcept;
 }
 

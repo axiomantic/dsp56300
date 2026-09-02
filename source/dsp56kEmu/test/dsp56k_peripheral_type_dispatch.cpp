@@ -1,11 +1,11 @@
-// DSP-4, part 2 - the DMA dispatch branch for a Peripherals56311.
+// The DMA dispatch branch for a Peripherals56311.
 //
 // DmaChannel::arm tests m_peripherals.getType() against Peripherals56303 and
 // Peripherals56362 only, and its else is
 // assert(false && "TODO unknown peripherals, not supported yet").
-// DmaChannel::setDCR calls arm() unconditionally, so before this task any DCR
-// write on a Peripherals56311 aborted a build with assertions enabled, and did
-// nothing at all in a build without them.
+// DmaChannel::setDCR calls arm() unconditionally, so a DCR write on a
+// Peripherals56311 that reaches that else aborts a build with assertions
+// enabled, and does nothing at all in a build without them.
 //
 // "No assertion fires" is not falsifiable on its own: source/base.cmake sets
 // CMAKE_BUILD_TYPE to Release when it is unset, so the default build defines
