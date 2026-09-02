@@ -1,4 +1,4 @@
-// DSP-20 - generalize execTransfer's DualCounterDOR handler.
+// Generalize execTransfer's DualCounterDOR handler.
 //
 // The (SingleCounterApostInc, DualCounterDOR1) handler hardcoded getDOR(1);
 // every other DualCounterDORn destination fell through to the
@@ -6,7 +6,8 @@
 // the enum value, which equals the DOR slot for those modes.
 //
 // DOR1 is deliberately absent: the pre-existing handler already serves it,
-// and a regression test for it belongs to DSP-4's check. Offsets are
+// and a regression test for it belongs with the checkTrigger overload
+// coverage rather than here. Offsets are
 // non-zero because a zero offset compares a default-zero DOR read against a
 // default-zero address move and passes whether the slot was read or not.
 //

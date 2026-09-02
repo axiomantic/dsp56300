@@ -1,4 +1,4 @@
-// DSP-23 - the two-dimensional SOURCE transfer, which the G2 kernel programs.
+// The two-dimensional SOURCE transfer, which the G2 kernel programs.
 //
 // execTransfer handled a 2D DESTINATION (SingleCounterApostInc source, AGM
 // 0-3 destination) and nothing on the mirrored side. A booted G2 kernel

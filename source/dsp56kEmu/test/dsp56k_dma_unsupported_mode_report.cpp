@@ -1,4 +1,4 @@
-// DSP-23 - an unsupported DMA address generation mode must be REPORTED, in
+// An unsupported DMA address generation mode must be REPORTED, in
 // every build type, and must not claim the block completed.
 //
 // The unsupported-mode limb of execTransfer was `assert(false && "DMA
@@ -16,7 +16,8 @@
 // character for character rather than searched for.
 //
 // The mode under test is source AGM 100 and destination AGM 100, both "no
-// update". It is deliberately NOT the mode DSP-23 implements: a test that
+// update". It is deliberately NOT the two-dimensional source mode this
+// branch implements: a test that
 // reported on an implemented mode would go green the moment support
 // arrived and stop guarding anything.
 
