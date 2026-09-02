@@ -1,8 +1,7 @@
-# The T0 job matrix. Task REPO-6 owns this file and is the only task that edits
-# one.
+# The T0 job matrix.
 #
 # THIS MATRIX IS T0 ONLY, AND IT ALWAYS WILL BE. No T1 job, no T2 job and no
-# integer-comparison job runs here. All three need a firmware byte, and no
+# integer-comparison job runs here. All of them need a firmware byte, and no
 # public repository may hold a credential that could fetch one. Those jobs run
 # inside the private artifact repository instead. T0 only is what lets every job
 # here run on a pull request from a fork.

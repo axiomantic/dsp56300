@@ -1,4 +1,4 @@
-// DSP-3 - a Dma for the Y-space ESAI.
+// A Dma for the Y-space ESAI.
 //
 // Esai::m_dma is a constructor argument that defaults to nullptr, and
 // Peripherals56367 passes none, so both m_dma->trigger(...) calls sit behind a
