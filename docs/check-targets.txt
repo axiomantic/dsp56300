@@ -1,6 +1,5 @@
 # This file is the repository-side declaration of what this repository's
-# own Check: lines target, per the plan document's plan_lint.py
-# --check-targets condition (PLAN-CHECKTARGETS).
+# own Check: lines target.
 #
 # One check target per line. Blank lines and lines starting with "#" are
 # ignored. A line is either a ctest test name or a "pytest <path>"
@@ -10,33 +9,20 @@
 # The condition is asserted only for tasks a lint run declares complete, so a
 # target added before its task completes would make the lint fail on work that
 # has not happened yet.
-#
-# DSP-0 creates the test directory and its CMake list. It registers no check
-# target of its own, so it adds no line here. Each later task adds its own.
-#
-# Seven of the nine dsp56k_ names are declared below. The two that are absent
-# are DSP-11's dsp56k_interpreter and dsp56k_jit. DSP-11 is CONDITIONAL: it
-# exists only if SPK-1 reports a non-empty intersection, and it has not run.
 
 #
 # A line carries the target name and nothing else. The loader takes the whole
 # stripped line, so a trailing comment would become part of the name.
 
-# DSP-5
 dsp56k_peripheral_type
 
-# DSP-1
 dsp56k_peripherals56311_surface
 
-# DSP-6
 dsp56k_find_exec_peripherals
 
-# DSP-4
 dsp56k_check_trigger_overload
 dsp56k_peripheral_type_dispatch
 
-# DSP-2
 dsp56k_dma_request_source
 
-# DSP-3
 dsp56k_second_esai_dma

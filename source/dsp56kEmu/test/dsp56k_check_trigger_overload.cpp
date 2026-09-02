@@ -1,4 +1,4 @@
-// DSP-4, part 1 - the third checkTrigger overload.
+// The third checkTrigger overload.
 //
 // checkTrigger is NOT a member of DmaChannel. It is two free functions in an
 // anonymous namespace in dma.cpp, one for Peripherals56303 and one for
