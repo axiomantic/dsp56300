@@ -1,4 +1,4 @@
-// Task DSP-21. Tier T0: the guest program lives in this file as literal
+// Tier T0: the guest program lives in this file as literal
 // words plus two assembler invocations; no firmware, kernel or .pch2 corpus
 // is touched, so the check runs with NMG2_ARTIFACTS unset.
 //
