@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Per-task test list for the Nord Modular G2 emulator dsp track.
+# Test list for the Nord Modular G2 emulator dsp track.
 #
 # Each entry below builds ONE executable from ONE source file and registers it
 # under ONE CTest name. A name registered here must be a distinct, real test.
@@ -14,16 +14,16 @@ function(dsp56k_add_test _name)
 	set_tests_properties(${_name} PROPERTIES LABELS "UnitTest;dsp56300;nmg2")
 endfunction()
 
-dsp56k_add_test(dsp56k_peripheral_type)			# DSP-5
-dsp56k_add_test(dsp56k_peripherals56311_surface)	# DSP-1
-dsp56k_add_test(dsp56k_find_exec_peripherals)	# DSP-6
-dsp56k_add_test(dsp56k_check_trigger_overload)	# DSP-4
-dsp56k_add_test(dsp56k_peripheral_type_dispatch)	# DSP-4
-dsp56k_add_test(dsp56k_dma_request_source)		# DSP-2
-dsp56k_add_test(dsp56k_second_esai_dma)			# DSP-3
-dsp56k_add_test(dsp56k_dma_dor_generalization)	# DSP-20
-dsp56k_add_test(dsp56k_do_forever)				# DSP-21
-dsp56k_add_test(dsp56k_esai_receive_last_slot)	# DSP-22
-dsp56k_add_test(dsp56k_dma_2d_source)			# DSP-23
-dsp56k_add_test(dsp56k_dma_unsupported_mode_report)	# DSP-23
-dsp56k_add_test(dsp56k_esai_tx_underrun_latch)	# DSP-24
+dsp56k_add_test(dsp56k_peripheral_type)
+dsp56k_add_test(dsp56k_peripherals56311_surface)
+dsp56k_add_test(dsp56k_find_exec_peripherals)
+dsp56k_add_test(dsp56k_check_trigger_overload)
+dsp56k_add_test(dsp56k_peripheral_type_dispatch)
+dsp56k_add_test(dsp56k_dma_request_source)
+dsp56k_add_test(dsp56k_second_esai_dma)
+dsp56k_add_test(dsp56k_dma_dor_generalization)
+dsp56k_add_test(dsp56k_do_forever)
+dsp56k_add_test(dsp56k_esai_receive_last_slot)
+dsp56k_add_test(dsp56k_dma_2d_source)
+dsp56k_add_test(dsp56k_dma_unsupported_mode_report)
+dsp56k_add_test(dsp56k_esai_tx_underrun_latch)
