@@ -103,7 +103,7 @@ namespace dsp56k
 			}
 
 		private:
-			Data m_data;
+			Data m_data{};
 			uint32_t m_slotCount = 0;
 		};
 
