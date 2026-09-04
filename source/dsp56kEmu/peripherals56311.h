@@ -11,8 +11,9 @@
 //                      ESAI_1 instance the X-space face owns. It holds no
 //                      block of its own and its exec() advances nothing.
 //
-// The set constructs ZERO EsaiClock objects. The scheduler drives both ESAI
-// frames through the public Esai::execTX and Esai::execRX.
+// The set constructs ZERO EsaiClock objects, so nothing in this repository
+// drives these ESAI frames yet. Esai::execTX and Esai::execRX are public, and
+// their only production callers are in EsaiClock::exec.
 
 #include "dma.h"
 #include "esai.h"
