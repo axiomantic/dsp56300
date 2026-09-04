@@ -474,6 +474,25 @@ namespace dsp56k
 		});
 	}
 
+	// DSP56300 Family Manual rev 2.0, p.13-60: LA and LC are pushed, LA is loaded with the
+	// destination operand, LC is left untouched, and both LF and FV are set. The mirror of
+	// DSP::do_execForever.
+	void JitOps::do_execForever(const TWord _addr)
+	{
+		{
+			DspValue la(m_block), lc(m_block);
+			m_dspRegs.getLA(la);
+			m_dspRegs.getLC(lc);
+			setSSHSSL(la, lc);
+		}
+
+		m_asm.mov(m_dspRegs.getLA(JitDspRegs::Write), asmjit::Imm(_addr));
+
+		pushPCSR();
+
+		m_asm.or_(m_dspRegs.getSR(JitDspRegs::ReadWrite), asmjit::Imm(SR_LF | SR_FV));
+	}
+
 	void JitOps::do_end()
 	{
 		const RegGP r(m_block);
@@ -481,11 +500,14 @@ namespace dsp56k
 	}
 	void JitOps::do_end(const RegGP& r)
 	{
-		// restore previous loop flag
+		// restore previous loop and forever flags: ENDDO and BRKcc are both specified as
+		// SSL(LF,FV) -> SR
 		{
+			constexpr auto loopFlags = SR_LF | SR_FV;
+
 			m_dspRegs.getSS(r64(r.get()));
-			m_asm.and_(r32(r), asmjit::Imm(SR_LF));
-			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~SR_LF));
+			m_asm.and_(r32(r), asmjit::Imm(loopFlags));
+			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~loopFlags));
 			m_asm.or_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), r32(r.get()));
 		}
 
@@ -586,6 +608,13 @@ namespace dsp56k
 
 		DspValue lc(m_block, loopcount, DspValue::Immediate24);
 		do_exec( lc, addr );
+	}
+
+	void JitOps::op_DoForever(TWord op)
+	{
+		const TWord addr = absAddressExt<DoForever>();
+
+		do_execForever( addr );
 	}
 
 	void JitOps::op_Do_S(TWord op)

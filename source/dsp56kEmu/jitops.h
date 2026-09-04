@@ -139,7 +139,7 @@ namespace dsp56k
 		void op_Do_aa(TWord op);
 		void op_Do_xxx(TWord op);
 		void op_Do_S(TWord op);
-		void op_DoForever(TWord op)			{ errNotImplemented(op); }
+		void op_DoForever(TWord op);
 		void op_Dor_ea(TWord op);
 		void op_Dor_aa(TWord op)			{ errNotImplemented(op); }
 		void op_Dor_xxx(TWord op);
@@ -636,6 +636,7 @@ namespace dsp56k
 
 		// loops
 		void do_exec(const DspValue& _lc, TWord _addr);
+		void do_execForever(TWord _addr);
 		void do_end(const RegGP& _temp);
 		void do_end();
 		void rep_exec(TWord _lc);
