@@ -4,10 +4,11 @@
 // face and owns every block. Peripherals56311Y is the Y-space face: a register
 // window over the ESAI_1 instance the X-space face owns.
 //
-// The set constructs ZERO EsaiClock objects. The scheduler drives both ESAI
-// frames, and Esai::execTX and Esai::execRX are public. That invariant is
-// asserted here at COMPILE TIME, in three ways, because a runtime counter
-// would need a change to an upstream header.
+// The set constructs ZERO EsaiClock objects, so nothing in this repository
+// drives these ESAI frames yet. Esai::execTX and Esai::execRX are public, and
+// their only production callers are in EsaiClock::exec. The ZERO-EsaiClock
+// half is asserted here at COMPILE TIME, in three ways, because a runtime
+// counter would need a change to an upstream header.
 
 #include "dsp56kEmu/peripherals56311.h"
 #include "dsp56kEmu/unittests.h"
@@ -48,7 +49,7 @@ namespace
 	static_assert(std::is_constructible_v<EsaiClock, Peripherals56362&>,
 		"EsaiClock's constructor no longer accepts a Peripherals56362&. Upstream changed, and this assertion must be re-read before it is relaxed");
 	static_assert(!std::is_constructible_v<EsaiClock, IPeripherals&>,
-		"EsaiClock's constructor was WIDENED to IPeripherals&. That change exists only to let a set which is not a Peripherals56362 hold an EsaiClock by value. Revert it: the scheduler drives the ESAI frames");
+		"EsaiClock's constructor was WIDENED to IPeripherals&. That change exists only to let a set which is not a Peripherals56362 hold an EsaiClock by value. Revert it: nothing in this repository drives these ESAI frames yet, and this set must not gain an EsaiClock to do it");
 	static_assert(!std::is_constructible_v<EsaiClock, Peripherals56311&>,
 		"An EsaiClock can be constructed from a Peripherals56311. The set must construct ZERO EsaiClock objects");
 	static_assert(!std::is_constructible_v<EsaiClock, Peripherals56311Y&>,

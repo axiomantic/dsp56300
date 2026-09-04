@@ -355,8 +355,9 @@ namespace dsp56k
 		m_mem[_addr - XIO_Reserved_High_First] = _val;
 	}
 
-	// No EsaiClock and no ESAI here. The scheduler drives Esai::execTX and
-	// Esai::execRX for both ports.
+	// No EsaiClock and no ESAI here. Nothing in this repository drives these
+	// ESAIs yet: the only production callers of Esai::execTX and Esai::execRX
+	// are in EsaiClock::exec, and this set constructs no EsaiClock.
 	uint32_t Peripherals56311::exec() noexcept
 	{
 		auto delay = m_hdi08.exec();

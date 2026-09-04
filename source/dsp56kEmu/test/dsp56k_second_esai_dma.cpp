@@ -88,8 +88,8 @@ namespace
 		verify(dma.hasTrigger(RequestSource::Esai1ReceiveData));
 		verify(mem.get(MemArea_X, g_destination) == 0);
 
-		// One receive slot on the second ESAI. The scheduler drives this call
-		// in production; Esai::execRX is public.
+		// One receive slot on the second ESAI. Nothing in this repository drives
+		// these ESAIs yet, so the test calls the public Esai::execRX itself.
 		esai1.execRX();
 
 		verify(p.getEsai1().readStatusRegister() & (1 << Esai::M_RDF));
