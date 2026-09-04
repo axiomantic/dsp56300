@@ -4,6 +4,7 @@
 
 #include "dsp.h"
 #include "peripherals.h"
+#include "peripherals56311.h"
 #include "utils.h"
 
 #include <cstring> // memcpy
@@ -68,6 +69,22 @@ namespace dsp56k
 			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
 			default:
 				assert("Unsupported request source for 56362");
+				return false;
+			}
+		}
+
+		bool checkTrigger(Peripherals56311& _p, const RequestSource _src)
+		{
+			switch (_src)
+			{
+			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
+			case RequestSource::EsaiTransmitData:			return _p.getEsai().getSR().test(Esai::M_TDE);
+			case RequestSource::Esai1ReceiveData:			return _p.getEsai1().getSR().test(Esai::M_RDF);
+			case RequestSource::Esai1TransmitData:			return _p.getEsai1().getSR().test(Esai::M_TDE);
+			case RequestSource::HostReceiveData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HRDF);
+			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
+			default:
+				assert(false && "Unsupported request source for 56311");
 				return false;
 			}
 		}
@@ -215,6 +232,17 @@ namespace dsp56k
 			if(checkTrigger(*p362, reqSrc))
 				triggerByRequest();
 		}
+		else if(m_peripherals.getType() == PeripheralType::Peripherals56311)
+		{
+			// The 56311 set presents two faces and both carry this enumerator,
+			// but only the X-space face owns a Dma, so m_peripherals is always
+			// the X-space face here.
+			auto* p311 = static_cast<Peripherals56311*>(&m_peripherals);
+			m_dma.addTriggerTarget(this);
+			m_armed = true;
+			if(checkTrigger(*p311, reqSrc))
+				triggerByRequest();
+		}
 		else
 		{
 			assert(false && "TODO unknown peripherals, not supported yet");
@@ -303,7 +331,21 @@ namespace dsp56k
 
 	DmaChannel::RequestSource DmaChannel::getRequestSource() const
 	{
-		return static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+		const auto raw = static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+
+		// This function is chip-agnostic, so the ESAI_1 translation is gated.
+		// An ungated remap would change the decode for the 56303 and the 56362.
+		if(m_peripherals.getType() != PeripheralType::Peripherals56311)
+			return raw;
+
+		// The hardware DCR field and the library enumerator are two number
+		// spaces, and this is the single definition site of the difference.
+		switch (raw)
+		{
+		case RequestSource::Dsp56303Reserved:	return RequestSource::Esai1ReceiveData;		// hardware 21
+		case RequestSource::Esai1ReceiveData:	return RequestSource::Esai1TransmitData;	// hardware 22
+		default:								return raw;
+		}
 	}
 
 	TWord DmaChannel::getAddressMode() const
