@@ -161,7 +161,7 @@ namespace dsp56k
 		// _____________________________________________________________________________
 		// implementation
 		//
-		explicit Essi(Peripherals56303& _peripheral, uint32_t _essiIndex);
+		explicit Essi(Peripherals56303& _peripheral, uint32_t _essiIndex, bool _useRingBuffers = true);
 
 		void reset();
 

@@ -9,6 +9,8 @@ namespace dsp56k
 	class Esxi : public Audio
 	{
 	public:
+		explicit Esxi(bool _useRingBuffers = true) : Audio(_useRingBuffers) {}
+
 		virtual void execTX() = 0;
 		virtual void execRX() = 0;
 

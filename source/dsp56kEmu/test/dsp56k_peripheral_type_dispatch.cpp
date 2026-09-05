@@ -1,18 +1,6 @@
-// The DMA dispatch branch for a Peripherals56311.
-//
-// DmaChannel::arm tests m_peripherals.getType() against Peripherals56303 and
-// Peripherals56362 only, and its else is
-// assert(false && "TODO unknown peripherals, not supported yet").
-// DmaChannel::setDCR calls arm() unconditionally, so a DCR write on a
-// Peripherals56311 that reaches that else aborts a build with assertions
-// enabled, and does nothing at all in a build without them.
-//
 // "No assertion fires" is not falsifiable on its own: source/base.cmake sets
 // CMAKE_BUILD_TYPE to Release when it is unset, so the default build defines
-// NDEBUG and every assert() in this repository compiles to nothing. The test
-// therefore asserts the branch's OWN effect - the channel is registered as a
-// trigger target - which fails in a build with assertions and in a build
-// without them alike.
+// NDEBUG and every assert() in this repository compiles to nothing.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"
@@ -69,8 +57,6 @@ namespace
 	}
 
 	// hasTrigger discriminates: a source with no armed channel answers false.
-	// Without this the assertion above would hold against a hasTrigger that
-	// always answered true.
 	void anUnarmedSourceHasNoTrigger()
 	{
 		Peripherals56311 p(g_frameRate96k);
@@ -84,8 +70,6 @@ namespace
 		verify(!p.getDMA().hasTrigger(RequestSource::Timer0));
 	}
 
-	// The two upstream branches keep working. The branch this task adds must
-	// not change how an existing set arms a channel.
 	void theUpstreamBranchesStillRegister()
 	{
 		{

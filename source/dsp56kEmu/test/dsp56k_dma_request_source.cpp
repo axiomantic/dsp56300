@@ -1,5 +1,3 @@
-// The two new DMA request sources for ESAI_1.
-//
 // The hardware DCR field and the library enumerator are two number spaces for
 // the ESAI_1 pair. They agree for the primary ESAI and differ for ESAI_1:
 //
@@ -73,8 +71,6 @@ namespace
 		_dma.setDCR(_channel, dcrForRequestSource(_hardwareRequestSource));
 	}
 
-	// A hardware field of 21 selects Esai1ReceiveData and a field of 22 selects
-	// Esai1TransmitData, on a Peripherals56311 and nowhere else.
 	void the56311TranslatesTheEsai1Pair()
 	{
 		Peripherals56311 p(g_frameRate96k);

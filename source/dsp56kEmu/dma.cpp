@@ -339,7 +339,7 @@ namespace dsp56k
 			return raw;
 
 		// The hardware DCR field and the library enumerator are two number
-		// spaces, and this is the single definition site of the difference.
+		// spaces.
 		switch (raw)
 		{
 		case RequestSource::Dsp56303Reserved:	return RequestSource::Esai1ReceiveData;		// hardware 21
