@@ -48,6 +48,7 @@ namespace dsp56k
 		m_readRX = 0;
 		m_txSlotCounter = 0;
 		m_txFrameCounter = 0;
+		m_txUnderrunInFrame = false;
 		m_rxSlotCounter = 0;
 		m_rxFrameCounter = 0;
 
@@ -99,6 +100,12 @@ namespace dsp56k
 		{
 			m_txFrame.resize(txWordCount + 1);
 			writeTXimpl(m_txFrame);
+
+			// The flag describes the frame just handed over, so it is cleared HERE
+			// and not a line earlier: writeTXimpl is what a consumer observes it
+			// through, and the next frame starts clean.
+			m_txUnderrunInFrame = false;
+
 			m_txFrame.clear();
 
 			m_txSlotCounter = 0;
@@ -159,6 +166,14 @@ namespace dsp56k
 		{
 			m_rxSlotCounter = 0;
 			++m_rxFrameCounter;
+
+			// 56362 manual 8.4.3: the receive last slot request occurs "after
+			// the last slot of the frame ended", regardless of RSMA/RSMB - so
+			// it belongs on the wrap and outside the slotActive guard above.
+			// The transmit twin's placement is the same, even though TLIE is
+			// specified one slot earlier, at the START of the last slot.
+			if (m_rcr.test(M_RLIE))
+				injectInterrupt(Vba_ESAI_Receive_Last_Slot);
 		}
 	}
 
@@ -196,6 +211,12 @@ namespace dsp56k
 	void Esai::writeTransmitControlRegister(TWord _val)
 	{
 		m_sr.clear(M_TUE);
+
+		// A TCR write clears the transmit underrun status, and when it enables or
+		// disables transmitters it also discards the partially assembled frame
+		// below. A flag left standing would then describe a frame that is never
+		// delivered and would be read against the NEXT one.
+		m_txUnderrunInFrame = false;
 		LOG("Write ESAI TCR " << HEX(_val));
 		const auto tem = getEnabledTransmitters();
 		m_tcr = _val;
@@ -387,6 +408,13 @@ namespace dsp56k
 		{
 			LOG("ESAI transmit underrun, written is " << HEX(m_writtenTX) << ", enabled is " << HEX(tem));
 			m_sr.set(M_TUE);
+
+			// The frame-lifetime twin of M_TUE. The DMA trigger below is serviced
+			// synchronously and reaches writeTX, which clears M_TUE again before
+			// this function even returns, so the status bit cannot carry the fact
+			// as far as the frame it belongs to. This flag does, and execTX clears
+			// it once the frame has been handed over.
+			m_txUnderrunInFrame = true;
 		}
 
 		m_sr.set(M_TDE);
