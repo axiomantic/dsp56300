@@ -8,7 +8,12 @@
 
 name: Sanitizers
 
-on: [push, pull_request]
+# On demand only: an instrumented rebuild of the whole tree plus a sanitized
+# run of the suite costs far more than an ordinary build, and the answer it
+# gives is wanted when a memory or arithmetic question actually arises, not
+# on every push and every pull request.
+on:
+  workflow_dispatch:
 
 permissions:
   contents: read
