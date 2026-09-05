@@ -1,0 +1,41 @@
+# An AddressSanitizer and UndefinedBehaviorSanitizer build of the test suite.
+#
+# The emulator does its own memory addressing and its own integer arithmetic on
+# 24-bit quantities widened into machine words. Neither an out-of-bounds access
+# into a memory bank nor a shift past the width of a type has to crash to be a
+# bug, and an ordinary Release build reports neither. These two sanitizers turn
+# both classes into a test failure.
+
+name: Sanitizers
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  asan-ubsan:
+    name: address and undefined sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # RelWithDebInfo rather than Debug: the sanitizers need the optimiser's
+      # frame layout to stay readable, and `-fno-omit-frame-pointer` is what
+      # keeps the reported stack usable at that optimisation level.
+      - name: Configure and build with the address and undefined sanitizers
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build build-asan --parallel
+
+      # No `-C` here: the ubuntu default generator is single-config, so the
+      # configuration was fixed at configure time above. `--no-tests=error`
+      # fails the job if the build registers nothing, rather than reporting a
+      # vacuous pass.
+      - name: Run the test suite under the sanitizers
+        run: ctest --test-dir build-asan --no-tests=error --output-on-failure
