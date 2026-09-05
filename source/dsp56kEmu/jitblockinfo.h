@@ -30,6 +30,12 @@ namespace dsp56k
 			WritesSRbeforeRead	= 0x01,
 			ModeChange			= 0x02,
 			IsLoopBodyBegin		= 0x04,
+
+			// the loop this block begins was opened by DO FOREVER rather than by a counted
+			// DO. Such a loop has no count that can end it, so the block must not close its
+			// own back edge: it returns to the caller once per pass, which is what gives
+			// interrupts and peripherals a time slice.
+			IsForeverLoopBody	= 0x08,
 		};
 
 		auto hasFlag(const Flags _flag) const
