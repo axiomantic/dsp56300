@@ -38,5 +38,22 @@ jobs:
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
+    # `ctest` exits 0 when the build registers no test at all, so a run that
+    # tests nothing is indistinguishable from a run in which everything passed.
+    # `--no-tests=error` turns that case into a failure. It is inert in `-N`
+    # listing mode, though: a listing exits 0 whether or not anything matched,
+    # so the check below reads what the listing PRINTS rather than its status.
+    # `--no-tests=error` needs CTest 3.20 or newer.
+    - name: Assert that the build registers at least one test
+      shell: bash
+      run: |
+        set -uo pipefail
+        listing=$(ctest --test-dir ${{github.workspace}}/build -C Release -N)
+        printf '%s\n' "${listing}"
+        if printf '%s\n' "${listing}" | grep -q 'Total Tests: 0'; then
+          echo "FAILURE: the build tree registers no test at all."
+          exit 1
+        fi
+
     - name: Run Tests
-      run: ctest --test-dir ${{github.workspace}}/build -C Release
+      run: ctest --test-dir ${{github.workspace}}/build --no-tests=error -C Release --output-on-failure
