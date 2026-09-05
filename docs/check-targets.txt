@@ -9,6 +9,20 @@
 # The condition is asserted only for tasks a lint run declares complete, so a
 # target added before its task completes would make the lint fail on work that
 # has not happened yet.
+
 #
-# The list below is empty on purpose. It is not a placeholder and it is not an
-# oversight.
+# A line carries the target name and nothing else. The loader takes the whole
+# stripped line, so a trailing comment would become part of the name.
+
+dsp56k_peripheral_type
+
+dsp56k_peripherals56311_surface
+
+dsp56k_find_exec_peripherals
+
+dsp56k_check_trigger_overload
+dsp56k_peripheral_type_dispatch
+
+dsp56k_dma_request_source
+
+dsp56k_second_esai_dma
