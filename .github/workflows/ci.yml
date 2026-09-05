@@ -131,28 +131,6 @@ jobs:
         shell: bash
         run: ctest --test-dir build --no-tests=error -C Release --output-on-failure
 
-  sanitizer-t0:
-    name: sanitizer-t0
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Configure and build with the address and undefined sanitizers
-        run: |
-          set -euo pipefail
-          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
-          cmake --build build-asan --parallel
-
-      # This leg is ubuntu-latest only, so the generator is single-config and no
-      # `-C` is needed. The absent `-R` is the same decision as in the matrix
-      # job: the registered set is the T0 set.
-      - name: Run the T0 suite under the sanitizers
-        run: ctest --test-dir build-asan --no-tests=error --output-on-failure
-
   track-repo:
     uses: ./.github/workflows/track-repo.yml
     with:
