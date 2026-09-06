@@ -130,8 +130,3 @@ jobs:
       - name: Run the T0 suite
         shell: bash
         run: ctest --test-dir build --no-tests=error -C Release --output-on-failure
-
-  track-repo:
-    uses: ./.github/workflows/track-repo.yml
-    with:
-      visibility: public
