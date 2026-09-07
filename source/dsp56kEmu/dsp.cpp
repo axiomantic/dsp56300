@@ -512,7 +512,12 @@ namespace dsp56k
 
 		const auto stackCount = reg.sc.var;
 
-		sr_set( _forever ? static_cast<SRMask>(SR_LF | SR_FV) : SR_LF );
+		// FV names the innermost loop, not a mode: ENDDO and BRKcc are specified as
+		// SSL(LF,FV) -> SR, so the bit travels on the stack with LF and each DO must
+		// state its own kind. A counted DO nested inside a forever loop that inherited
+		// FV would be a loop the count can never retire.
+		sr_set( SR_LF );
+		sr_toggle( SR_FV, _forever );
 
 		++m_instructions;
 

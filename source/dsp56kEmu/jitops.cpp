@@ -451,7 +451,12 @@ namespace dsp56k
 
 			pushPCSR();
 
+			// The mirror of DSP::do_execImpl. FV must be CLEARED here, not merely left
+			// alone: the loop-end emitter reads SR.FV at run time to decide whether the
+			// count may retire the loop, and a counted DO nested inside a forever loop
+			// would otherwise inherit the outer loop's FV and spin without end.
 			m_asm.or_(m_dspRegs.getSR(JitDspRegs::ReadWrite), asmjit::Imm(SR_LF));
+			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~static_cast<uint32_t>(SR_FV)));
 		};
 
 		if(_lc.isImmediate())
