@@ -193,7 +193,7 @@ namespace dsp56k
 
 		sr_toggle( CCR_C, _shiftAmount && ((d64 & (TInt64(1)<<(56 + g_aluShift - _shiftAmount))) != 0) );
 
-		const TInt64 res = d64 << _shiftAmount;
+		const TInt64 res = shiftLeft(d64, static_cast<unsigned int>(_shiftAmount));
 
 		TReg56& d = abDst ? reg.b : reg.a;
 
@@ -224,9 +224,15 @@ namespace dsp56k
 	{
 		TReg24 d = ab ? b1() : a1();
 
-		sr_toggle( CCR_C, _shiftAmount && bittest( d, 23-_shiftAmount+1) );
+		// The register form of the instruction takes the low six bits of the source,
+		// so the count reaches 63 while the operand is 24 bits wide. Every count from
+		// 24 upwards shifts the whole operand out; the carry is the last bit to leave,
+		// which exists only while the count is 24 or less.
+		const uint32_t v = static_cast<uint32_t>(d.var) & 0x00ffffff;
 
-		const int res = (d.var << _shiftAmount) & 0x00ffffff;
+		sr_toggle( CCR_C, _shiftAmount > 0 && _shiftAmount <= 24 && ((v >> (24 - _shiftAmount)) & 1) != 0 );
+
+		const int res = static_cast<int>(_shiftAmount >= 24 ? 0u : ((v << _shiftAmount) & 0x00ffffff));
 
 		if( ab )
 			b1(TReg24(res));
@@ -249,9 +255,12 @@ namespace dsp56k
 	{
 		TReg24 d = ab ? b1() : a1();
 
-		sr_toggle( CCR_C, _shiftAmount && bittest( d, _shiftAmount-1) );
+		// See alu_lsl: the count reaches 63 and the operand is 24 bits wide.
+		const uint32_t v = static_cast<uint32_t>(d.var) & 0x00ffffff;
 
-		const unsigned int res = ((unsigned int)d.var >> _shiftAmount);
+		sr_toggle( CCR_C, _shiftAmount > 0 && _shiftAmount <= 24 && ((v >> (_shiftAmount - 1)) & 1) != 0 );
+
+		const unsigned int res = _shiftAmount >= 24 ? 0u : (v >> _shiftAmount);
 
 		if( ab )
 			b1(TReg24(res));
@@ -362,7 +371,7 @@ namespace dsp56k
 
 		// fractional multiplication requires one post-shift; the same shift scales the product
 		// into the left-aligned ALU domain before it meets the accumulator
-		res <<= (1 + g_aluShift);
+		res = shiftLeft(res, 1 + g_aluShift);
 
 		if( _negate )
 			res = -res;
@@ -404,7 +413,7 @@ namespace dsp56k
 
 		// fractional multiplication requires one post-shift; the same shift scales the product
 		// into the left-aligned ALU domain before it meets the accumulator
-		res <<= (1 + g_aluShift);
+		res = shiftLeft(res, 1 + g_aluShift);
 
 		if( _negate )
 			res = -res;
@@ -442,7 +451,7 @@ namespace dsp56k
 
 		// fractional multiplication requires one post-shift; the same shift scales the product
 		// into the left-aligned ALU domain before it meets the accumulator
-		res <<= (1 + g_aluShift);
+		res = shiftLeft(res, 1 + g_aluShift);
 
 		if( _negate )
 			res = -res;
@@ -484,7 +493,7 @@ namespace dsp56k
 
 		// fractional multiplication requires one post-shift; the same shift scales the product
 		// into the left-aligned ALU domain before it meets the accumulator
-		res <<= (1 + g_aluShift);
+		res = shiftLeft(res, 1 + g_aluShift);
 
 		if( _negate )
 			res = -res;
@@ -737,7 +746,7 @@ namespace dsp56k
 			count = bsr - (64 - 9 - 1);  // range: -47 to +8
 		}
 
-		d.var = static_cast<TInt64>(count) << (24 + g_aluShift);
+		d.var = shiftLeft(static_cast<TInt64>(count), 24 + g_aluShift);
 		aluMask(d);
 
 		// N: Set if bit 47 (= bit 23 of the 24-bit result) is set
@@ -815,15 +824,15 @@ namespace dsp56k
 		
 		const auto c = msbOld != bitvalue<23>(s24);
 		
-		d.var <<= 1;
+		d.var = shiftLeft(d.var, 1);
 		d.var |= static_cast<TInt64>(sr_test_noCache(CCR_C) ? 1 : 0) << g_aluShift;	// carry enters at the accumulator LSB
 
 		const auto msbNew = bitvalue<55 + g_aluShift>(d);
 
 		if( c )
-			d.var = ((d.var + (signextend<TInt64,24>(s24.var) << (24 + g_aluShift)) )&static_cast<TInt64>(0x00ffffffff000000ull << g_aluShift)) | (d.var & (0xffffffll << g_aluShift));
+			d.var = ((d.var + shiftLeft(signextend<TInt64,24>(s24.var), 24 + g_aluShift) )&static_cast<TInt64>(0x00ffffffff000000ull << g_aluShift)) | (d.var & (0xffffffll << g_aluShift));
 		else
-			d.var = ((d.var - (signextend<TInt64,24>(s24.var) << (24 + g_aluShift)) )&static_cast<TInt64>(0x00ffffffff000000ull << g_aluShift)) | (d.var & (0xffffffll << g_aluShift));
+			d.var = ((d.var - shiftLeft(signextend<TInt64,24>(s24.var), 24 + g_aluShift) )&static_cast<TInt64>(0x00ffffffff000000ull << g_aluShift)) | (d.var & (0xffffffll << g_aluShift));
 
 		sr_toggle( CCRB_C, !bitvalue<55 + g_aluShift>(d) );	// Set if bit 55 of the result is cleared.
 		sr_toggle( CCRB_V, msbNew != msbOld );	// Set if the MSB of the destination operand is changed as a result of the instructions left shift operation.

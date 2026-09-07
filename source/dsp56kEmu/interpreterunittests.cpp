@@ -10,6 +10,7 @@ namespace dsp56k
 	{
 		testCCCC();
 		testSubr();
+		testLslLsrOversizedShift();
 		
 		runAllTests();
 	}
@@ -65,6 +66,30 @@ namespace dsp56k
 		verify(_ge == (dsp.decode_cccc(CCCC_GreaterEqual) != 0));
 		verify(_gt == (dsp.decode_cccc(CCCC_GreaterThan) != 0));
 		verify(_neq == (dsp.decode_cccc(CCCC_NotEqual) != 0));	
+	}
+
+	// The register form of LSL and LSR takes the low six bits of the source register,
+	// so a count of 32 or more reaches the ALU. Any count from 24 upwards shifts every
+	// bit of the 24 bit operand out and leaves zero, the rule the count of 28 in
+	// UnitTests::lsl states. A plain machine shift cannot express that: both x86 and
+	// arm64 truncate the count of a 32 bit shift to five bits, so a count of 32 shifts
+	// by nothing and returns the operand unchanged.
+	void InterpreterUnitTests::testLslLsrOversizedShift()
+	{
+		for(const TWord shiftAmount : {32u, 40u, 63u})
+		{
+			dsp.x1(shiftAmount);
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+			emit("lsl x1,a");
+			verify(dsp.aluA().var == 0xab000000445566);
+			verify(!dsp.sr_test(CCR_C));
+
+			dsp.x1(shiftAmount);
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+			emit("lsr x1,a");
+			verify(dsp.aluA().var == 0xab000000445566);
+			verify(!dsp.sr_test(CCR_C));
+		}
 	}
 
 	void InterpreterUnitTests::runTest(const std::function<void()>& _build, const std::function<void()>& _verify)
