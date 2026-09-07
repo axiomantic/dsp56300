@@ -653,8 +653,6 @@ namespace dsp56k
 				store(_agu, tmp.get());
 			};
 
-			rotate(0, true , 0);
-			rotate(1, false, 0);
 			rotate(2, true , 8);
 			rotate(3, false, 8);
 
