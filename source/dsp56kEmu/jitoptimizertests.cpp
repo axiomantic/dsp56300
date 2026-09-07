@@ -30,6 +30,7 @@ namespace dsp56k
 		testMoveImmAdd();
 		testFullBlockPipeline();
 		testAGUOperations();
+		testRotateFold();
 
 		LOG("JIT Optimizer Tests finished.");
 	}
@@ -615,6 +616,69 @@ namespace dsp56k
 	// Test using the FULL JitBlock::emit pipeline — writes DSP opcodes into
 	// P memory and compiles with the real block infrastructure + optimizer.
 	// This matches exactly what happens in the actual DSP emulation.
+	// The constant folder computes a rotate itself. Written as a pair of shifts, the
+	// complementary shift lands on the width of the type when the rotate amount is
+	// zero, which is undefined. x86 masks a shift count in hardware, so the folded
+	// value comes out right either way and only an undefined-behaviour instrument
+	// separates the two; the non-zero rotates here are what checks the value.
+	void JitOptimizerTests::testRotateFold()
+	{
+#ifndef HAVE_ARM64
+		runOptimizedTest("RotateFold", [&]()
+		{
+			dsp.resetHW();
+			for(auto& n : dsp.regs().n)
+				n.var = 0;
+		}, [&](JitBlock& block, JitOps&)
+		{
+			constexpr uint64_t value = 0x0123456789abcdefull;
+
+			const auto store = [&](const TWord _agu, const JitRegGP& _src)
+			{
+				DspValue v(block);
+				v.temp(DspValue::Temp24);
+				block.asm_().mov(r32(v.get()), r32(_src));
+				block.asm_().and_(r32(v.get()), asmjit::Imm(0xffffff));
+				block.regs().setN(_agu, v);
+			};
+
+			const auto rotate = [&](const TWord _agu, const bool _left, const uint32_t _amount)
+			{
+				RegGP tmp(block);
+				block.asm_().mov(r64(tmp.get()), asmjit::Imm(value));
+				if(_left)
+					block.asm_().rol(r64(tmp.get()), asmjit::Imm(_amount));
+				else
+					block.asm_().ror(r64(tmp.get()), asmjit::Imm(_amount));
+				store(_agu, tmp.get());
+			};
+
+			rotate(0, true , 0);
+			rotate(1, false, 0);
+			rotate(2, true , 8);
+			rotate(3, false, 8);
+
+			// rorx is the three-operand rotate the folder handles separately. The
+			// unoptimized half of the comparison executes the instruction itself, so
+			// it can only run where the host provides it.
+			if(JitEmitter::hasBMI2())
+			{
+				RegGP src(block);
+				RegGP dst(block);
+				block.asm_().mov(r64(src.get()), asmjit::Imm(value));
+				block.asm_().rorx(r64(dst.get()), r64(src.get()), asmjit::Imm(0));
+				store(4, dst.get());
+
+				RegGP src2(block);
+				RegGP dst2(block);
+				block.asm_().mov(r64(src2.get()), asmjit::Imm(value));
+				block.asm_().rorx(r64(dst2.get()), r64(src2.get()), asmjit::Imm(8));
+				store(5, dst2.get());
+			}
+		});
+#endif
+	}
+
 	void JitOptimizerTests::testFullBlockPipeline()
 	{
 		const std::string name = "FullBlockPipeline";

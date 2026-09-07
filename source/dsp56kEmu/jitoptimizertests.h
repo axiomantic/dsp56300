@@ -54,6 +54,7 @@ namespace dsp56k
 		void testMoveImmAdd();
 		void testFullBlockPipeline();
 		void testAGUOperations();
+		void testRotateFold();
 
 		Peripherals56362 peripheralsX;
 		Peripherals56367 peripheralsY;
