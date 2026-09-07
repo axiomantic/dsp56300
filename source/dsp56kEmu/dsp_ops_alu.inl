@@ -733,7 +733,7 @@ namespace dsp56k
 		else
 		{
 			// bit 55 has to sit at the MSB of the 64-bit value; left-aligned it already does
-			const auto shifted = static_cast<int64_t>(s.var << (8 - g_aluShift));
+			const auto shifted = shiftLeft(s.var, 8 - g_aluShift);
 
 			// If MSB is 1, invert to count leading ones as leading zeros
 			auto val = static_cast<uint64_t>(shifted < 0 ? ~shifted : shifted);
