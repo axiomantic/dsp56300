@@ -455,8 +455,8 @@ namespace dsp56k
 							else if(instId == Inst::kIdShl) result = regVal << (immVal & 63);
 							else if(instId == Inst::kIdShr) result = static_cast<int64_t>(static_cast<uint64_t>(regVal) >> (immVal & 63));
 							else if(instId == Inst::kIdSar) result = regVal >> (immVal & 63);
-							else if(instId == Inst::kIdRol) result = static_cast<int64_t>((static_cast<uint64_t>(regVal) << (immVal & 63)) | (static_cast<uint64_t>(regVal) >> (64 - (immVal & 63))));
-							else if(instId == Inst::kIdRor) result = static_cast<int64_t>((static_cast<uint64_t>(regVal) >> (immVal & 63)) | (static_cast<uint64_t>(regVal) << (64 - (immVal & 63))));
+							else if(instId == Inst::kIdRol) result = static_cast<int64_t>(rotateLeft(static_cast<uint64_t>(regVal), static_cast<unsigned int>(immVal & 63)));
+							else if(instId == Inst::kIdRor) result = static_cast<int64_t>(rotateRight(static_cast<uint64_t>(regVal), static_cast<unsigned int>(immVal & 63)));
 							else canFold = false;
 #endif
 							if(canFold && !flagsAreLive)
@@ -540,7 +540,7 @@ namespace dsp56k
 							else if(instId == Inst::kIdShl) result = srcVal << (immVal & 63);
 							else if(instId == Inst::kIdShr) result = static_cast<int64_t>(static_cast<uint64_t>(srcVal) >> (immVal & 63));
 							else if(instId == Inst::kIdSar) result = srcVal >> (immVal & 63);
-							else if(instId == Inst::kIdRorx) result = static_cast<int64_t>((static_cast<uint64_t>(srcVal) >> (immVal & 63)) | (static_cast<uint64_t>(srcVal) << (64 - (immVal & 63))));
+							else if(instId == Inst::kIdRorx) result = static_cast<int64_t>(rotateRight(static_cast<uint64_t>(srcVal), static_cast<unsigned int>(immVal & 63)));
 							else canFold = false;
 
 							if(canFold && !flagsAreLive)

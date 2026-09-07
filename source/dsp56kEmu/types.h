@@ -31,6 +31,30 @@ namespace dsp56k
 		return static_cast<T>(static_cast<typename std::make_unsigned<T>::type>(_value) << _shift);
 	}
 
+	// A rotate written as a pair of shifts has to shift the complementary operand by
+	// the full width of the type when the rotate amount is zero, and a shift by the
+	// width is undefined. Masking the complementary amount as well keeps both shifts
+	// inside the width and makes a zero rotate the identity it is meant to be.
+	template<typename T> constexpr T rotateLeft(const T _value, const unsigned int _shift)
+	{
+		using Unsigned = typename std::make_unsigned<T>::type;
+		constexpr unsigned int width = sizeof(T) * CHAR_BIT;
+		const unsigned int left = _shift & (width - 1);
+		const unsigned int right = (width - left) & (width - 1);
+		const auto value = static_cast<Unsigned>(_value);
+		return static_cast<T>(static_cast<Unsigned>((value << left) | (value >> right)));
+	}
+
+	template<typename T> constexpr T rotateRight(const T _value, const unsigned int _shift)
+	{
+		using Unsigned = typename std::make_unsigned<T>::type;
+		constexpr unsigned int width = sizeof(T) * CHAR_BIT;
+		const unsigned int right = _shift & (width - 1);
+		const unsigned int left = (width - right) & (width - 1);
+		const auto value = static_cast<Unsigned>(_value);
+		return static_cast<T>(static_cast<Unsigned>((value >> right) | (value << left)));
+	}
+
 	template<typename T,unsigned int B> struct RegType
 	{
 		static constexpr T bitCount = B;
