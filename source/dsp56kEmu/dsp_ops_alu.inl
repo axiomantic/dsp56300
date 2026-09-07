@@ -165,7 +165,16 @@ namespace dsp56k
 
 		const TInt64 d64 = aluSignextend(dSrc);
 
-		sr_toggle( CCR_C, _shiftAmount && bittest(d64, _shiftAmount - 1 + g_aluShift) );
+		// The count is six bits wide and the accumulator is 56, so a count above 56 asks
+		// for a bit the operand does not have. An arithmetic shift right keeps feeding
+		// the sign bit in, so every bit that leaves after the 56th is that sign bit,
+		// which is the accumulator's highest. The JIT arrives at the same value by
+		// reading the carry off the shifted register, where the sign has already been
+		// replicated into it.
+		constexpr int msb = 55 + g_aluShift;
+		const int carryBit = _shiftAmount - 1 + g_aluShift;
+
+		sr_toggle( CCR_C, _shiftAmount && bittest(d64, carryBit < msb ? carryBit : msb) );
 
 		const TInt64 res = d64 >> _shiftAmount;
 
