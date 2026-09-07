@@ -104,6 +104,8 @@ namespace dsp56k
 		lra();
 		lsl();
 		lsr();
+		lslLsrOversizedShift();
+		asrOversizedShift();
 		lua_ea();
 		lua_rn();
 		mac();
@@ -1745,6 +1747,89 @@ namespace dsp56k
 		{
 			verify(dsp.aluA().var == 0xab000000445566);
 		});
+	}
+
+	// The register form of LSL and LSR takes the low six bits of the source register, so
+	// a count of 32 or more reaches the ALU. A 32 bit machine shift cannot express that:
+	// x86 and arm64 both truncate the count of a 32 bit shift to five bits, so a count
+	// of 32 shifts by nothing and returns the operand unchanged.
+	//
+	// Every expected value below comes from what the instruction is defined to do, not
+	// from what either back end produced. The operand is a1 = 0x112233; both counts and
+	// the shape of the accumulator are chosen so the definition alone fixes the answer:
+	//
+	//   result  every count here is 24 or more, so all 24 bits of a1 leave the operand
+	//           and a1 is zero. LSL and LSR write a1 only, so a2 and a0 stay at 0xab
+	//           and 0x445566 and the accumulator reads 0xab000000445566.
+	//   carry   the last bit shifted out of the operand. A count past 24 has no bit of
+	//           the operand still leaving, so the carry is clear.
+	// ASR's count is six bits and the accumulator is 56, so a count above 56 asks for a
+	// bit the operand does not have.
+	//
+	// Both expected values come from the definition of the instruction. An arithmetic
+	// shift right feeds the sign bit in at the top, so after 56 shifts the accumulator
+	// holds nothing but the sign: all ones for a negative operand, zero for a positive
+	// one. The carry is the last bit shifted out, and once the operand is exhausted the
+	// bits still leaving are the sign bit that was fed in, so the carry is the sign.
+	// Neither value was read off a back end; the two back ends agree with them.
+	void UnitTests::asrOversizedShift()
+	{
+		for(const TWord shiftAmount : {56u, 57u, 63u})
+		{
+			runTest([&]()
+			{
+				dsp.x0(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xff800000000000)));
+				emit("asr x0,a,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xffffffffffffff);
+				verify(dsp.sr_test(CCR_C));
+			});
+
+			runTest([&]()
+			{
+				dsp.x0(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00800000000000)));
+				emit("asr x0,a,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0);
+				verify(!dsp.sr_test(CCR_C));
+			});
+		}
+	}
+
+	void UnitTests::lslLsrOversizedShift()
+	{
+		for(const TWord shiftAmount : {32u, 40u, 63u})
+		{
+			runTest([&]()
+			{
+				dsp.x1(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+				emit("lsl x1,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xab000000445566);
+				verify(!dsp.sr_test(CCR_C));
+			});
+
+			runTest([&]()
+			{
+				dsp.x1(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+				emit("lsr x1,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xab000000445566);
+				verify(!dsp.sr_test(CCR_C));
+			});
+		}
 	}
 
 	void UnitTests::lsr()
