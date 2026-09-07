@@ -44,11 +44,13 @@ jobs:
     # listing mode, though: a listing exits 0 whether or not anything matched,
     # so the check below reads what the listing PRINTS rather than its status.
     # `--no-tests=error` needs CTest 3.20 or newer.
+    # The workspace path is quoted because this step runs under bash: on Windows
+    # the path is backslash-separated, and unquoted bash eats the separators.
     - name: Assert that the build registers at least one test
       shell: bash
       run: |
         set -uo pipefail
-        listing=$(ctest --test-dir ${{github.workspace}}/build -C Release -N)
+        listing=$(ctest --test-dir "${{github.workspace}}/build" -C Release -N)
         printf '%s\n' "${listing}"
         if printf '%s\n' "${listing}" | grep -q 'Total Tests: 0'; then
           echo "FAILURE: the build tree registers no test at all."
