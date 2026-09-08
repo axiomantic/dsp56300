@@ -65,9 +65,11 @@ namespace
 
 	DefaultMemoryValidator g_memoryValidator;
 
-	TWord assembleOne(const Assembler& _asm, const std::string& _text)
+	// The parameter is not called _asm: MSVC treats that spelling as the __asm
+	// keyword, and the declaration does not parse there.
+	TWord assembleOne(const Assembler& _assembler, const std::string& _text)
 	{
-		const auto r = _asm.assemble(_text.c_str());
+		const auto r = _assembler.assemble(_text.c_str());
 		verify(r.success());
 		verify(r.wordCount == 1);
 		verify(r.word[0] != 0);
