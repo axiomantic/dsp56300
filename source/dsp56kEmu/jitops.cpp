@@ -2,6 +2,8 @@
 
 #include "dsp56kBase/dspassert.h"
 
+#include <stdexcept>
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitblockruntimedata.h"
@@ -435,6 +437,12 @@ namespace dsp56k
 		// generator would emit nothing for the opcode and the block would run on as
 		// though it had been translated.
 		Assert::show("instruction not implemented", __func__, __LINE__);
+
+		// Assert::show logs and throws on most platforms, but on Windows it returns.
+		// An unimplemented opcode has to be unsurvivable on every platform: a return
+		// here is indistinguishable to the caller from having executed the
+		// instruction.
+		throw std::runtime_error("instruction not implemented");
 	}
 
 	void JitOps::do_exec(const DspValue& _lc, TWord _addr)

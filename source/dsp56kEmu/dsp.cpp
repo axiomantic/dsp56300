@@ -4,6 +4,8 @@
 
 #include "dsp56kBase/dspassert.h"
 
+#include <stdexcept>
+
 #include <iomanip>
 #include <cstring>
 
@@ -1417,6 +1419,12 @@ aar0=$000008 aar1=$000000 aar2=$000000 aar3=$000000
 		// is a defect in the emulator, and the only exit that cannot be mistaken for
 		// success is the one this project already uses for a fatal condition.
 		Assert::show("instruction not implemented, see console for details", __func__, __LINE__);
+
+		// Assert::show logs and throws on most platforms, but on Windows it returns.
+		// An unimplemented opcode has to be unsurvivable on every platform: a return
+		// here is indistinguishable to the caller from having executed the
+		// instruction.
+		throw std::runtime_error("instruction not implemented, see console for details");
 	}
 
 	void DSP::updatePreviousRegisterStates()
