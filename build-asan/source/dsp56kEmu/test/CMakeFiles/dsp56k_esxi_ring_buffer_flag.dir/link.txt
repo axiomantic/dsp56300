@@ -1,0 +1,1 @@
+/usr/bin/c++ -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -O2 -g -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/dsp56k_esxi_ring_buffer_flag.dir/dsp56k_esxi_ring_buffer_flag.cpp.o -o dsp56k_esxi_ring_buffer_flag  ../libdsp56kEmu.a ../../dsp56kBase/libdsp56kBase.a ../../asmjit/libasmjit.a -lpthread

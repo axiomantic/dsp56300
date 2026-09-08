@@ -1,0 +1,1 @@
+/usr/bin/c++ -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -O2 -g -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/sharedAudioReducerTest.dir/sharedaudioreducer_test.cpp.o -o sharedAudioReducerTest  libdsp56kBase.a
