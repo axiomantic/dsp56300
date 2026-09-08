@@ -90,6 +90,9 @@ namespace  dsp56k
 		void jscc();
 		void lra();
 		void lsl();
+		void lslLsrOversizedShift();
+		void asrOversizedShift();
+		void asrCarry();
 		void lsr();
 		void lua_ea();
 		void lua_rn();

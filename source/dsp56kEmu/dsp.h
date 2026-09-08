@@ -622,7 +622,7 @@ namespace dsp56k
 		TReg56	aluB			() const							{ return TReg56(static_cast<TReg56::MyType>((reg.b.var >> g_aluShift) & TReg56::bitMask)); }
 		TReg56	getALU			(const bool _b) const				{ return _b ? aluB() : aluA(); }
 
-		void	setALU			(const bool _b, const TReg56& _v)	{ (_b ? reg.b : reg.a).var = _v.var << g_aluShift; }
+		void	setALU			(const bool _b, const TReg56& _v)	{ (_b ? reg.b : reg.a).var = shiftLeft(_v.var, g_aluShift); }
 
 		// Left-aligned domain helpers. The accumulator occupies bits 63..8, so the 56-bit mask and the
 		// sign extension that the right-aligned form needed both change shape:
@@ -694,7 +694,7 @@ namespace dsp56k
 			// left-aligned the value is already sign-correct in 64 bits, no sign extension needed
 			const int64_t test = _src.var;
 
-			if( test < (-140737488355328ll << g_aluShift) )	// ff 800000 000000
+			if( test < -(140737488355328ll << g_aluShift) )	// ff 800000 000000
 			{
 				sr_set( CCR_L );
 				_dst = 0x800000;

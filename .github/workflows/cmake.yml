@@ -42,5 +42,8 @@ jobs:
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
+    # `ctest` exits 0 when the build registers no test at all, so a run that tests
+    # nothing is indistinguishable from one in which everything passed.
+    # `--no-tests=error` (CTest 3.20 or newer) turns that case into a failure.
     - name: Run Tests
-      run: ctest --test-dir ${{github.workspace}}/build -C Release
+      run: ctest --test-dir ${{github.workspace}}/build --no-tests=error -C Release --output-on-failure
