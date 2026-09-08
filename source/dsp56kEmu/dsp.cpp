@@ -2,6 +2,8 @@
 
 #include "dsp.h"
 
+#include "dsp56kBase/dspassert.h"
+
 #include <iomanip>
 #include <cstring>
 
@@ -1409,7 +1411,12 @@ aar0=$000008 aar1=$000000 aar2=$000000 aar3=$000000
 		const auto str(ss.str());
 		LOG(str);
 
-		assert(false && "instruction not implemented, see console for details");
+		// Assert::show directly rather than through assert(): that macro expands to
+		// nothing without _DEBUG, and a release build then continued past the
+		// unimplemented opcode indistinguishably from having executed it. Reaching one
+		// is a defect in the emulator, and the only exit that cannot be mistaken for
+		// success is the one this project already uses for a fatal condition.
+		Assert::show("instruction not implemented, see console for details", __func__, __LINE__);
 	}
 
 	void DSP::updatePreviousRegisterStates()

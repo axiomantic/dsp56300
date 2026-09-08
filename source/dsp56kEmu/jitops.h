@@ -90,7 +90,7 @@ namespace dsp56k
 		void op_Brclr_pp(TWord op);
 		void op_Brclr_qq(TWord op);
 		void op_Brclr_S(TWord op);
-		void op_BRKcc(TWord op)			{ errNotImplemented(op); }
+		void op_BRKcc(TWord op);
 		void op_Brset_ea(TWord op);
 		void op_Brset_aa(TWord op);
 		void op_Brset_pp(TWord op);

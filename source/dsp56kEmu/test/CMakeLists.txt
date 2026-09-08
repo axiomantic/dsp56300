@@ -11,7 +11,11 @@ function(dsp56k_add_test _name)
 	target_link_libraries(${_name} PRIVATE dsp56kEmu)
 	set_property(TARGET ${_name} PROPERTY FOLDER "dsp56300")
 	add_test(NAME ${_name} COMMAND ${_name})
-	set_tests_properties(${_name} PROPERTIES LABELS "UnitTest;dsp56300;nmg2")
+	# Every test here drives a few thousand guest instructions and finishes in well
+	# under a second. CTest's default allowance is 1500 seconds, so an emulator
+	# defect that spins inside one call reads as a run that is still working rather
+	# than as a failure. The bound is what turns that into a red.
+	set_tests_properties(${_name} PROPERTIES LABELS "UnitTest;dsp56300;nmg2" TIMEOUT 60)
 endfunction()
 
 dsp56k_add_test(dsp56k_peripheral_type)

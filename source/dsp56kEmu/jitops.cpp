@@ -1,5 +1,7 @@
 #include "jitops.h"
 
+#include "dsp56kBase/dspassert.h"
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitblockruntimedata.h"
@@ -428,7 +430,11 @@ namespace dsp56k
 		// triaged from a log without a debugger attached.
 		fprintf(stderr, "*** JIT errNotImplemented: opcode=$%06X\n", op);
 		fflush(stderr);
-		assert(0 && "instruction not implemented");
+
+		// See DSP::errNotImplemented: assert() is a no-op without _DEBUG, so the
+		// generator would emit nothing for the opcode and the block would run on as
+		// though it had been translated.
+		Assert::show("instruction not implemented", __func__, __LINE__);
 	}
 
 	void JitOps::do_exec(const DspValue& _lc, TWord _addr)
@@ -664,6 +670,25 @@ namespace dsp56k
 	void JitOps::op_Enddo(TWord op)
 	{
 		do_end();
+	}
+
+	// The mirror of DSP::op_BRKcc. DSP56300 Family Manual rev 2.0, BRKcc, p.13-30.
+	void JitOps::op_BRKcc(TWord op)
+	{
+		checkCondition<BRKcc>(op, [&]()
+		{
+			// LA must be captured before do_end, which overwrites it with the enclosing
+			// loop's copy from the system stack.
+			DspValue exitAddr(m_block);
+			m_dspRegs.getLA(exitAddr);
+
+			m_asm.add(r32(exitAddr.get()), asmjit::Imm(1));
+			m_asm.and_(r32(exitAddr.get()), asmjit::Imm(0xffffff));
+
+			do_end();
+
+			jmp(exitAddr);
+		}, false);
 	}
 
 	template<bool BackupCCR> void JitOps::op_Ifcc(const TWord op)
