@@ -800,7 +800,6 @@ namespace dsp56k
 		case Dor_S:
 			readf(Field_DDDDDD);
 			break;
-		case BRKcc:
 		case Enddo:
 			write(Register::LA);
 			write(Register::LC);

@@ -677,9 +677,8 @@ namespace dsp56k
 	{
 		checkCondition<BRKcc>(op, [&]()
 		{
-			// LA must be captured before do_end, which overwrites it with the enclosing
-			// loop's copy from the system stack.
 			DspValue exitAddr(m_block);
+			exitAddr.temp(DspValue::Temp24);
 			m_dspRegs.getLA(exitAddr);
 
 			m_asm.add(r32(exitAddr.get()), asmjit::Imm(1));
