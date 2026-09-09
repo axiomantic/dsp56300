@@ -800,6 +800,12 @@ namespace dsp56k
 		case Dor_S:
 			readf(Field_DDDDDD);
 			break;
+		// BRKcc unstacks the loop exactly as ENDDO does, so it has the same register
+		// effects. Declaring them is also what ends the JIT block at the break: a write to
+		// LA or LC terminates a block, and without that the generated code goes on to
+		// execute the instructions between the break and the loop address with the loop
+		// already unstacked, which the interpreter does not.
+		case BRKcc:
 		case Enddo:
 			write(Register::LA);
 			write(Register::LC);

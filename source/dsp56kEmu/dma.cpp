@@ -4,14 +4,18 @@
 
 #include "dsp.h"
 #include "peripherals.h"
+#include "peripherals56311.h"
 #include "utils.h"
 
 #include <cstring> // memcpy
 
 #include "interrupts.h"
 
-#if 0
+// Unconditional: execTransfer reports an unsupported address generation mode
+// through LOG, and that report must survive NDEBUG.
 #include "dsp56kBase/logging.h"
+
+#if 0
 #define LOGDMA(S) LOG(S)
 #else
 #define LOGDMA(S) do{}while(0)
@@ -68,6 +72,22 @@ namespace dsp56k
 			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
 			default:
 				assert("Unsupported request source for 56362");
+				return false;
+			}
+		}
+
+		bool checkTrigger(Peripherals56311& _p, const RequestSource _src)
+		{
+			switch (_src)
+			{
+			case RequestSource::EsaiReceiveData:			return _p.getEsai().getSR().test(Esai::M_RDF);
+			case RequestSource::EsaiTransmitData:			return _p.getEsai().getSR().test(Esai::M_TDE);
+			case RequestSource::Esai1ReceiveData:			return _p.getEsai1().getSR().test(Esai::M_RDF);
+			case RequestSource::Esai1TransmitData:			return _p.getEsai1().getSR().test(Esai::M_TDE);
+			case RequestSource::HostReceiveData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HRDF);
+			case RequestSource::HostTransmitData:			return _p.getHDI08().readStatusRegister() & (1 << dsp56k::HDI08::HSR_HTDE);
+			default:
+				assert(false && "Unsupported request source for 56311");
 				return false;
 			}
 		}
@@ -215,6 +235,17 @@ namespace dsp56k
 			if(checkTrigger(*p362, reqSrc))
 				triggerByRequest();
 		}
+		else if(m_peripherals.getType() == PeripheralType::Peripherals56311)
+		{
+			// The 56311 set presents two faces and both carry this enumerator,
+			// but only the X-space face owns a Dma, so m_peripherals is always
+			// the X-space face here.
+			auto* p311 = static_cast<Peripherals56311*>(&m_peripherals);
+			m_dma.addTriggerTarget(this);
+			m_armed = true;
+			if(checkTrigger(*p311, reqSrc))
+				triggerByRequest();
+		}
 		else
 		{
 			assert(false && "TODO unknown peripherals, not supported yet");
@@ -303,7 +334,21 @@ namespace dsp56k
 
 	DmaChannel::RequestSource DmaChannel::getRequestSource() const
 	{
-		return static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+		const auto raw = static_cast<RequestSource>((m_dcr >> 11) & 0x1f);
+
+		// This function is chip-agnostic, so the ESAI_1 translation is gated.
+		// An ungated remap would change the decode for the 56303 and the 56362.
+		if(m_peripherals.getType() != PeripheralType::Peripherals56311)
+			return raw;
+
+		// The hardware DCR field and the library enumerator are two number
+		// spaces.
+		switch (raw)
+		{
+		case RequestSource::Dsp56303Reserved:	return RequestSource::Esai1ReceiveData;		// hardware 21
+		case RequestSource::Esai1ReceiveData:	return RequestSource::Esai1TransmitData;	// hardware 22
+		default:								return raw;
+		}
 	}
 
 	TWord DmaChannel::getAddressMode() const
@@ -696,9 +741,10 @@ namespace dsp56k
 			return true;
 		}
 
-		if(agmS == AddressGenMode::SingleCounterApostInc && agmD == AddressGenMode::DualCounterDOR1)
+		if(agmS == AddressGenMode::SingleCounterApostInc && agmD <= AddressGenMode::DualCounterDOR3)
 		{
-			// 2D mode, can be either line or word
+			// 2D mode, can be either line or word. AGM 0-3 select the DOR slot
+			// whose offset is applied after each line.
 
 			const auto tm = getTransferMode();
 			const auto isLineTransfer = tm == TransferMode::LineTriggerRequestClearDE;
@@ -708,7 +754,7 @@ namespace dsp56k
 				memWrite(areaD, m_ddr, memRead(areaS, m_dsr));
 				++m_dsr;
 
-				if(dualModeIncrement(m_ddr, m_dma.getDOR(1)))
+				if(dualModeIncrement(m_ddr, m_dma.getDOR(static_cast<int>(agmD))))
 					return true;
 			}
 			while(isLineTransfer && m_dcol != m_dcolInit);
@@ -716,8 +762,43 @@ namespace dsp56k
 			return false;
 		}
 
-		assert(false && "DMA transfer mode not supported yet");
-		return true;
+		if(agmD == AddressGenMode::SingleCounterApostInc && agmS <= AddressGenMode::DualCounterDOR3)
+		{
+			// The mirror of the limb above: the SOURCE is the two-dimensional
+			// side and AGM 0-3 select the DOR slot whose offset is applied
+			// after each line. This is what an ESAI receive programs - the
+			// source walks the peripheral's receive registers and returns to
+			// the first one via a negative offset, while the destination runs
+			// linearly through a memory block.
+
+			const auto tm = getTransferMode();
+			const auto isLineTransfer = tm == TransferMode::LineTriggerRequestClearDE;
+
+			do
+			{
+				memWrite(areaD, m_ddr, memRead(areaS, m_dsr));
+				++m_ddr;
+
+				if(dualModeIncrement(m_dsr, m_dma.getDOR(static_cast<int>(agmS))))
+					return true;
+			}
+			while(isLineTransfer && m_dcol != m_dcolInit);
+
+			return false;
+		}
+
+		// NDEBUG deletes an assert, so an assert here reported nothing at all
+		// in a Release build and the `return true` below it then told the
+		// caller a block had completed - clearing DE and firing the
+		// transfer-done interrupt for a transfer that never happened. LOG is
+		// the facility esai.cpp already reports an unexpected state through
+		// and it is compiled into every build type.
+		//
+		// The answer is false because false is the true one: no word moved, so
+		// the block did not finish. finishTransfer must not run.
+		LOG("DMA channel " << m_index << " unsupported address generation mode, DCR is " << HEX(m_dcr) << ", DAM is " << HEXN(getDAM(), 2) << ", no transfer performed");
+
+		return false;
 	}
 
 	void DmaChannel::finishTransfer()

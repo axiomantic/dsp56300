@@ -50,14 +50,16 @@ namespace dsp56k
 			return m_jitFuncs;
 		}
 
-		const TJitFunc& getFunc(const TWord _pc) const
+		// Bounded for the same reason as DSP::jitEntry, and to the same answer. These two
+		// are the chain-side reads of the table; the third is the one the trampoline emits.
+		TJitFunc getFunc(const TWord _pc) const
 		{
-			return m_jitFuncs[_pc];
+			return _pc < m_jitFuncs.size() ? m_jitFuncs[_pc] : &funcCreate;
 		}
 
 		void exec(const TWord _pc) const
 		{
-			exec(_pc, m_jitFuncs[_pc]);
+			exec(_pc, getFunc(_pc));
 		}
 
 		void exec(const TWord _pc, const TJitFunc& _f) const;

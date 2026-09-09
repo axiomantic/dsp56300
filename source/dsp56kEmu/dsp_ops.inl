@@ -121,9 +121,21 @@ namespace dsp56k
 		decode_dddddd_write( dddddd, TReg24(newVal) );			
 	}
 
+	// DSP56300 Family Manual rev 2.0, BRKcc, p.13-30: the loop is unstacked exactly as
+	// ENDDO unstacks it -- SSL(LF,FV) -> SR, then LC and LA come back off the stack --
+	// and control resumes at LA+1 rather than falling through.
 	inline void DSP::op_BRKcc(const TWord op)
 	{
-		errNotImplemented("BRKcc");
+		if( !checkCondition<BRKcc>(op) )
+			return;
+
+		// LA must be read before do_end, which overwrites it with the enclosing loop's
+		// copy from the system stack.
+		const TWord exitAddr = (reg.la.var + 1) & 0x00ffffff;
+
+		do_end();
+
+		setPC(exitAddr);
 	}
 
 	inline void DSP::op_Bset_ea(const TWord op)
@@ -272,7 +284,9 @@ namespace dsp56k
 	}
 	inline void DSP::op_DoForever(const TWord op)
 	{
-		errNotImplemented("DO FOREVER");
+		const TWord addr = absAddressExt<DoForever>();
+
+		do_execForever( addr );
 	}
 	inline void DSP::op_Dor_ea(const TWord op)
 	{

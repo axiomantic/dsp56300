@@ -55,6 +55,18 @@ namespace dsp56k
 		{
 			assert(_pc == hiword(_dsp.regs().ss[_dsp.ssIndex()]).toWord());
 			_info.addFlag(JitBlockInfo::Flags::IsLoopBodyBegin);
+
+			// The instruction that opened this loop sits two words back: one opcode word and
+			// one absolute-address extension word. Decode it rather than matching the raw
+			// word so the opcode table stays the single source of truth.
+			TWord opDoA, opDoB;
+			_dsp.memory().getOpcode(_pc - 2, opDoA, opDoB);
+
+			Instruction instDoA, instDoB;
+			opcodes.getInstructionTypes(opDoA, instDoA, instDoB);
+
+			if(instDoA == DoForever)
+				_info.addFlag(JitBlockInfo::Flags::IsForeverLoopBody);
 		}
 		else
 		{
@@ -381,6 +393,7 @@ namespace dsp56k
 		const auto isLoopStart = info.hasFlag(JitBlockInfo::Flags::IsLoopBodyBegin);
 		const auto isLoopEnd = info.terminationReason == JitBlockInfo::TerminationReason::LoopEnd;
 		const auto isLoopBody = isLoopStart && isLoopEnd;
+		const auto isForeverLoopBody = isLoopBody && info.hasFlag(JitBlockInfo::Flags::IsForeverLoopBody);
 
 		bool childIsConditional = false;
 
@@ -462,6 +475,14 @@ namespace dsp56k
 			if (!isLoopBody)
 				return false;
 
+			// A DO FOREVER loop has no count that can retire it, so closing the back edge
+			// inside the block would spin here until the process is killed: exec() would
+			// never return and the interrupt poll in DSP::execJit would never run again.
+			// Leaving the edge open costs one block re-entry per pass and is what makes the
+			// loop interruptible, exactly as the part specifies.
+			if (isForeverLoopBody)
+				return false;
+
 			const SkipLabel skip(m_asm);
 
 			if(m_config.maxDoIterations)
@@ -541,9 +562,21 @@ namespace dsp56k
 			m_asm.bitTest(sr, SRB_LF);
 			m_asm.jz(skip);
 
+			// SR.FV marks a DO FOREVER loop. Its LC is decremented on every wrap but never
+			// tested, so the count must not be allowed to retire the loop: only ENDDO or
+			// BRKcc may, and both clear LF above.
+			const auto wrap = m_asm.newLabel();
+
+			m_asm.bitTest(sr, SRB_FV);
+			m_asm.jnz(wrap);
+
 			m_asm.cmp(lc, asmjit::Imm(1));
 			m_asm.jle(enddo);
+
+			m_asm.bind(wrap);
 			m_asm.dec(lc);
+			// LC is architecturally 24 bits and a forever loop drives it through zero
+			m_asm.and_(lc, asmjit::Imm(0xffffff));
 
 			if(isLoopBody)
 			{

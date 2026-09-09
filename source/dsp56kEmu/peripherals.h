@@ -21,7 +21,8 @@ namespace dsp56k
 		PeripheralsNop,
 		Peripherals56303,
 		Peripherals56362,
-		Peripherals56367
+		Peripherals56367,
+		Peripherals56311
 	};
 
 	enum XIO

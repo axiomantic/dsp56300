@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.10)
+
+# Test list for the Nord Modular G2 emulator dsp track.
+#
+# Each entry below builds ONE executable from ONE source file and registers it
+# under ONE CTest name. A name registered here must be a distinct, real test.
+# Do not point two names at one program. See README.md.
+
+function(dsp56k_add_test _name)
+	add_executable(${_name} ${_name}.cpp)
+	target_link_libraries(${_name} PRIVATE dsp56kEmu)
+	set_property(TARGET ${_name} PROPERTY FOLDER "dsp56300")
+	add_test(NAME ${_name} COMMAND ${_name})
+	# Every test here drives a few thousand guest instructions and finishes in well
+	# under a second. CTest's default allowance is 1500 seconds, so an emulator
+	# defect that spins inside one call reads as a run that is still working rather
+	# than as a failure. The bound is what turns that into a red.
+	set_tests_properties(${_name} PROPERTIES LABELS "UnitTest;dsp56300;nmg2" TIMEOUT 60)
+endfunction()
+
+dsp56k_add_test(dsp56k_peripheral_type)
+dsp56k_add_test(dsp56k_peripherals56311_surface)
+dsp56k_add_test(dsp56k_find_exec_peripherals)
+dsp56k_add_test(dsp56k_check_trigger_overload)
+dsp56k_add_test(dsp56k_peripheral_type_dispatch)
+dsp56k_add_test(dsp56k_dma_request_source)
+dsp56k_add_test(dsp56k_second_esai_dma)
+dsp56k_add_test(dsp56k_esxi_ring_buffer_flag)
+dsp56k_add_test(dsp56k_dma_dor_generalization)
+dsp56k_add_test(dsp56k_do_forever)
+dsp56k_add_test(dsp56k_do_forever_nested)
+dsp56k_add_test(dsp56k_brkcc)
+dsp56k_add_test(dsp56k_jit_block_successor_entry)
+dsp56k_add_test(dsp56k_esai_receive_last_slot)
+dsp56k_add_test(dsp56k_esai_receive_frame_wrap_repeats)
+dsp56k_add_test(dsp56k_dma_2d_source)
+dsp56k_add_test(dsp56k_dma_rearm_guard)
+dsp56k_add_test(dsp56k_dma_esai1_request_source)
+dsp56k_add_test(dsp56k_dma_unsupported_mode_report)
+dsp56k_add_test(dsp56k_esai_tx_underrun_latch)
+dsp56k_add_test(dsp56k_frame_zero_initialised)
+dsp56k_add_test(dsp56k_jit_entry_table_bounds)

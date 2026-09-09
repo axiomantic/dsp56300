@@ -1,5 +1,9 @@
 #include "jitops.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitblockruntimedata.h"
@@ -428,7 +432,17 @@ namespace dsp56k
 		// triaged from a log without a debugger attached.
 		fprintf(stderr, "*** JIT errNotImplemented: opcode=$%06X\n", op);
 		fflush(stderr);
-		assert(0 && "instruction not implemented");
+
+		// See DSP::errNotImplemented: assert() is a no-op without _DEBUG, so the
+		// generator would emit nothing for the opcode and the block would run on as
+		// though it had been translated.
+		Assert::show("instruction not implemented", __func__, __LINE__);
+
+		// Assert::show logs and throws on most platforms, but on Windows it returns.
+		// An unimplemented opcode has to be unsurvivable on every platform: a return
+		// here is indistinguishable to the caller from having executed the
+		// instruction.
+		throw std::runtime_error("instruction not implemented");
 	}
 
 	void JitOps::do_exec(const DspValue& _lc, TWord _addr)
@@ -451,7 +465,12 @@ namespace dsp56k
 
 			pushPCSR();
 
+			// The mirror of DSP::do_execImpl. FV must be CLEARED here, not merely left
+			// alone: the loop-end emitter reads SR.FV at run time to decide whether the
+			// count may retire the loop, and a counted DO nested inside a forever loop
+			// would otherwise inherit the outer loop's FV and spin without end.
 			m_asm.or_(m_dspRegs.getSR(JitDspRegs::ReadWrite), asmjit::Imm(SR_LF));
+			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~static_cast<uint32_t>(SR_FV)));
 		};
 
 		if(_lc.isImmediate())
@@ -474,6 +493,25 @@ namespace dsp56k
 		});
 	}
 
+	// DSP56300 Family Manual rev 2.0, p.13-60: LA and LC are pushed, LA is loaded with the
+	// destination operand, LC is left untouched, and both LF and FV are set. The mirror of
+	// DSP::do_execForever.
+	void JitOps::do_execForever(const TWord _addr)
+	{
+		{
+			DspValue la(m_block), lc(m_block);
+			m_dspRegs.getLA(la);
+			m_dspRegs.getLC(lc);
+			setSSHSSL(la, lc);
+		}
+
+		m_asm.mov(m_dspRegs.getLA(JitDspRegs::Write), asmjit::Imm(_addr));
+
+		pushPCSR();
+
+		m_asm.or_(m_dspRegs.getSR(JitDspRegs::ReadWrite), asmjit::Imm(SR_LF | SR_FV));
+	}
+
 	void JitOps::do_end()
 	{
 		const RegGP r(m_block);
@@ -481,11 +519,14 @@ namespace dsp56k
 	}
 	void JitOps::do_end(const RegGP& r)
 	{
-		// restore previous loop flag
+		// restore previous loop and forever flags: ENDDO and BRKcc are both specified as
+		// SSL(LF,FV) -> SR
 		{
+			constexpr auto loopFlags = SR_LF | SR_FV;
+
 			m_dspRegs.getSS(r64(r.get()));
-			m_asm.and_(r32(r), asmjit::Imm(SR_LF));
-			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~SR_LF));
+			m_asm.and_(r32(r), asmjit::Imm(loopFlags));
+			m_asm.and_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), asmjit::Imm(~loopFlags));
 			m_asm.or_(r32(m_dspRegs.getSR(JitDspRegs::ReadWrite)), r32(r.get()));
 		}
 
@@ -588,6 +629,13 @@ namespace dsp56k
 		do_exec( lc, addr );
 	}
 
+	void JitOps::op_DoForever(TWord op)
+	{
+		const TWord addr = absAddressExt<DoForever>();
+
+		do_execForever( addr );
+	}
+
 	void JitOps::op_Do_S(TWord op)
 	{
 		const auto addr = absAddressExt<Do_S>();
@@ -630,6 +678,24 @@ namespace dsp56k
 	void JitOps::op_Enddo(TWord op)
 	{
 		do_end();
+	}
+
+	// The mirror of DSP::op_BRKcc. DSP56300 Family Manual rev 2.0, BRKcc, p.13-30.
+	void JitOps::op_BRKcc(TWord op)
+	{
+		checkCondition<BRKcc>(op, [&]()
+		{
+			DspValue exitAddr(m_block);
+			exitAddr.temp(DspValue::Temp24);
+			m_dspRegs.getLA(exitAddr);
+
+			m_asm.add(r32(exitAddr.get()), asmjit::Imm(1));
+			m_asm.and_(r32(exitAddr.get()), asmjit::Imm(0xffffff));
+
+			do_end();
+
+			jmp(exitAddr);
+		}, false);
 	}
 
 	template<bool BackupCCR> void JitOps::op_Ifcc(const TWord op)
