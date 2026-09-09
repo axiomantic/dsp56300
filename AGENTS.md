@@ -143,6 +143,12 @@ Never write these in a comment:
   mechanism the word did.
 - **A path that does not resolve.** A comment that names a file, a script, a
   test, or a type must name one that exists.
+- **A claim about the rest of the tree.** A comment describes the code beside
+  it. Do not write what else includes this header, what its only caller is,
+  which target links it next, or what another file does not name. The build
+  graph and the include graph answer those and stay right; a sentence about them
+  is derivable, goes stale the moment another target moves, and records no
+  decision.
 
 **One exception, and it is the only one.** A number that a mechanism reads and
 checks at build time or at test time may stay. The check is then the source of
@@ -158,6 +164,12 @@ expression and a file test. Write the check. Do not trust a sweep to hold.
 path has a correct target, so give it one. A named script that exists nowhere has
 no target, so the sentence goes — unless the sentence records a known GAP, and
 then the gap moves to a tracked item BEFORE the comment goes.
+
+**A cross-reference that helps a reader NAVIGATE still stands.** "The opcode
+table is also walked in `dsp56kEmu/disasm.cpp`" earns its place and stays,
+provided it asserts no exclusivity and no sequence. What goes is ONLY, FIRST,
+NEXT, and "does not name": those are the falsifiable forms, and that difference
+is the whole of the rule.
 
 **A date does not rescue a stale claim.** Within a day of churn a date
 discriminates nothing.
