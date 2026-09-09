@@ -76,7 +76,15 @@ namespace dsp56k
 		const auto first = _block->getPCFirst();
 		const auto last = first + _block->getPMemSize();
 
-		ensureSize(last - 1);
+		// `last` is where this block hands control back, and both DSP::execJit and
+		// JitBlockChain::exec index the entry table there with no bounds check. The table
+		// grows on a P write whose value differed from what was already in memory, and on
+		// a block being occupied -- so an address that holds an opcode word of zero over
+		// already-zero P memory is covered by neither, and the read runs off the end of
+		// it. Sizing to `last` rather than `last - 1` is what gives every block an entry
+		// to return to. A block ending at the top of P memory has no successor inside it.
+		const auto pSize = m_jit.dsp().memory().sizeP();
+		ensureSize(last < pSize ? last : pSize - 1);
 
 		for (auto i = first; i < last; ++i)
 		{
