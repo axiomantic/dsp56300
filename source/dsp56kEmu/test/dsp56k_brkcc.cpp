@@ -8,7 +8,7 @@
 // the loop; one whose BRKcc is not taken must stay in it.
 //
 // BRKcc unstacks the loop the way ENDDO does -- SSL(LF,FV) -> SR, then LC and LA
-// off the stack -- and resumes at LA+1 rather than falling through, so the four
+// off the stack -- and resumes at LA+1 rather than falling through, so the
 // post-conditions below separate a real implementation from a jump.
 //
 // WHY THIS TEST CANNOT HANG. The interpreter runs an entire DO loop inside one
@@ -55,8 +55,15 @@ namespace
 	constexpr TWord g_seedLC = 0x000004;
 	constexpr TWord g_breakAtLC = 0x000001;
 
+	// The pass after which the break is taken is the one the trailing probe last saw:
+	// LC is decremented on the wrap, so the pass before the breaking one carries
+	// g_breakAtLC + 1.
+	constexpr TWord g_lastLCbeforeBreak = g_breakAtLC + 1;
+
 	// X:<aa> short absolute is a 6-bit field, so every observable lives below $40.
-	constexpr TWord g_addrRecordedLC = 0x3e;
+	// One probe sits ahead of the break and one behind it.
+	constexpr TWord g_addrLCbeforeBreak = 0x3d;
+	constexpr TWord g_addrLCafterBreak = 0x3e;
 
 	struct Fixture
 	{
@@ -145,14 +152,23 @@ namespace
 	//   $100  DO FOREVER
 	//   $101    (extension word: LA)
 	//   $102  move lc,x0
-	//   $103  move x0,x:$3e      record the count this pass saw
+	//   $103  move x0,x:$3d      record the count this pass saw, before the break
 	//   $104  move lc,a
 	//   $105  cmp #1,a           Z set only when LC has counted down to 1
 	//   $106  brkeq
-	//   $107  nop                <- LA, the last instruction in the loop
+	//   $107  move lc,x0
+	//   $108  move x0,x:$3e      record it again, behind the break
+	//   $109  nop                <- LA, the last instruction in the loop
 	//
 	// LC is seeded with 4 and decremented on every wrap, so the taken pass is the
 	// fourth. Both arms of the condition are therefore exercised by one run.
+	//
+	// THE SECOND PROBE IS THE POINT. Everything ahead of the break runs on every
+	// pass and so cannot tell a break that stops the pass from one that merely sets
+	// the PC. The probe behind it can: a taken break must not reach it, so it holds
+	// the count of the pass before the break, and it holds the count restored off
+	// the system stack -- the seed -- if the instructions between the break and the
+	// loop address run with the loop already unstacked.
 	struct BreakProgram
 	{
 		static constexpr TWord base = 0x100;
@@ -179,11 +195,14 @@ namespace
 			};
 
 			emit("move lc,x0");
-			emit("move x0,x:$3e");
+			emit("move x0,x:$3d");
 			emit(breakEver ? "move lc,a" : "move #2,a");
 			emit("cmp #1,a");
 
 			body.push_back(g_opBrkEq);
+
+			emit("move lc,x0");
+			emit("move x0,x:$3e");
 
 			emit("nop");
 
@@ -212,11 +231,13 @@ namespace
 
 	void checkPostConditions(const Fixture& _f, const BreakProgram& _prog, const TWord _laBefore, const char* _engine)
 	{
-		const auto recordedLC = _f.mem.get(MemArea_X, g_addrRecordedLC);
+		const auto lcBeforeBreak = _f.mem.get(MemArea_X, g_addrLCbeforeBreak);
+		const auto lcAfterBreak = _f.mem.get(MemArea_X, g_addrLCafterBreak);
 		const auto& r = _f.dsp.regs();
 
 		std::cout << _engine
-			<< ": recorded lc=$" << std::hex << recordedLC
+			<< ": lc before break=$" << std::hex << lcBeforeBreak
+			<< " lc after break=$" << lcAfterBreak
 			<< " final lc=$" << r.lc.toWord()
 			<< " final la=$" << r.la.toWord()
 			<< " final sr=$" << r.sr.var
@@ -226,7 +247,13 @@ namespace
 		// The loop ran until the count reached the breaking value. A BRKcc taken on
 		// the first pass -- or one that never runs because the condition is ignored --
 		// records the seed instead.
-		verify(recordedLC == g_breakAtLC);
+		verify(lcBeforeBreak == g_breakAtLC);
+
+		// Nothing behind the break ran on the breaking pass, so the last count it saw
+		// is the one from the pass before. g_seedLC here would mean the instructions
+		// between the break and the loop address ran after the loop was unstacked and
+		// read LC back off the system stack.
+		verify(lcAfterBreak == g_lastLCbeforeBreak);
 
 		// BRKcc restores LF and FV from the stacked SR, exactly as ENDDO does.
 		verify((r.sr.var & SR_LF) == 0);
@@ -247,7 +274,8 @@ namespace
 		BreakProgram prog;
 		prog.write(f.dsp);
 
-		f.mem.set(MemArea_X, g_addrRecordedLC, 0);
+		f.mem.set(MemArea_X, g_addrLCbeforeBreak, 0);
+		f.mem.set(MemArea_X, g_addrLCafterBreak, 0);
 
 		const auto laBefore = f.dsp.regs().la.toWord();
 		f.dsp.regs().lc.var = g_seedLC;
@@ -282,7 +310,8 @@ namespace
 			BreakProgram prog;
 			prog.write(f.dsp);
 
-			f.mem.set(MemArea_X, g_addrRecordedLC, 0);
+			f.mem.set(MemArea_X, g_addrLCbeforeBreak, 0);
+			f.mem.set(MemArea_X, g_addrLCafterBreak, 0);
 
 			const auto laBefore = f.dsp.regs().la.toWord();
 			f.dsp.regs().lc.var = g_seedLC;
@@ -322,7 +351,8 @@ namespace
 		prog.breakEver = false;
 		prog.write(f.dsp);
 
-		f.mem.set(MemArea_X, g_addrRecordedLC, 0);
+		f.mem.set(MemArea_X, g_addrLCbeforeBreak, 0);
+		f.mem.set(MemArea_X, g_addrLCafterBreak, 0);
 
 		f.dsp.regs().lc.var = g_seedLC;
 		f.dsp.setPC(BreakProgram::base);
@@ -334,7 +364,8 @@ namespace
 		wd.stop();
 
 		std::cout << "interpreter (untaken): watchdog fired=" << wd.fired()
-			<< " recorded lc=$" << std::hex << f.mem.get(MemArea_X, g_addrRecordedLC)
+			<< " lc before break=$" << std::hex << f.mem.get(MemArea_X, g_addrLCbeforeBreak)
+			<< " lc after break=$" << f.mem.get(MemArea_X, g_addrLCafterBreak)
 			<< std::dec << std::endl;
 
 		verify(wd.fired());
@@ -343,8 +374,10 @@ namespace
 		verify((f.dsp.regs().sr.var & SR_LF) != 0);
 		verify((f.dsp.regs().sr.var & SR_FV) != 0);
 
-		// The body kept running rather than falling out after one pass.
-		verify(f.mem.get(MemArea_X, g_addrRecordedLC) != 0);
+		// The body kept running rather than falling out after one pass, and an untaken
+		// break let the pass carry on past it.
+		verify(f.mem.get(MemArea_X, g_addrLCbeforeBreak) != 0);
+		verify(f.mem.get(MemArea_X, g_addrLCafterBreak) != 0);
 	}
 }
 
