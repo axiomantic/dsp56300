@@ -18,6 +18,10 @@ namespace dsp56k
 	constexpr auto g_periphFunc = JitReg64(19);
 	constexpr auto g_ptrTargetClock = JitReg64(21);
 	constexpr auto g_ptrInstructions = JitReg64(27);
+	// The entry the loop uses when the PC is not an index the table has. Held in a register
+	// rather than materialised per unrolled iteration: on this target that is four
+	// instructions of address building, eight times over, in the hottest loop there is.
+	constexpr auto g_funcCreate = JitReg64(28);
 #else
 	constexpr auto g_ptrDSP = asmjit::x86::r12;
 	constexpr auto g_counter = asmjit::x86::r13;
@@ -33,6 +37,9 @@ namespace dsp56k
 	static_assert(!g_counter.equals(regDspPtr));
 	static_assert(!g_ptrJitEntries.equals(regDspPtr));
 	static_assert(!g_ptrPC.equals(regDspPtr));
+#ifdef HAVE_ARM64
+	static_assert(!g_funcCreate.equals(regDspPtr));
+#endif
 
 	JitTrampoline::JitTrampoline(DSP& _dsp) : m_dsp(_dsp)
 	{
@@ -61,6 +68,7 @@ namespace dsp56k
 		m_asm.push(r64(g_periphFunc));
 		m_asm.push(r64(g_ptrTargetClock));
 		m_asm.push(r64(g_ptrInstructions));
+		m_asm.push(r64(g_funcCreate));
 #else
 		// regDspPtr survives the whole loop: no block uses it and C++ callees preserve it. Everything
 		// else we need would be destroyed by a block now, so it lives in our own frame instead.
@@ -86,9 +94,12 @@ namespace dsp56k
 		// itself prices at zero - so they live in the frame and are read with a short displacement.
 		static constexpr uint32_t g_slotPeriphFunc = g_shadow + 16;
 		static constexpr uint32_t g_slotClockPtr = g_shadow + 24;
+		// See g_funcCreate on the other target for why this is hoisted: a mov of a 64 bit
+		// immediate is ten bytes and the loop body's size is what costs here.
+		static constexpr uint32_t g_slotFuncCreate = g_shadow + 32;
 		// rsp is 8 mod 16 on entry; keep it 0 mod 16 at the call whatever the push count is
 		static constexpr int g_pushCount = static_cast<int>(std::size(g_trampolineSavedGPs)) + 1;
-		static constexpr int g_slotBytes = static_cast<int>(g_shadow) + 32;
+		static constexpr int g_slotBytes = static_cast<int>(g_shadow) + 40;
 		static constexpr uint32_t g_additionalStackSize = static_cast<uint32_t>(g_slotBytes + (((8 - 8*g_pushCount - g_slotBytes) % 16 + 16) % 16));
 		static_assert(((8 - 8*g_pushCount - static_cast<int>(g_additionalStackSize)) % 16) == 0, "rsp must be 16 byte aligned at the call");
 		m_asm.sub(asmjit::x86::regs::rsp, asmjit::Imm(g_additionalStackSize));
@@ -118,6 +129,7 @@ namespace dsp56k
 		m_asm.mov(g_periphFunc, asmjit::Imm(periphFunc));
 		m_asm.mov(g_ptrTargetClock, asmjit::Imm(targetClock));
 		m_asm.mov(g_ptrInstructions, asmjit::Imm(&m_dsp.getInstructionCounter()));
+		m_asm.mov(g_funcCreate, asmjit::Imm(reinterpret_cast<const void*>(&funcCreate)));
 #endif
 
 		const auto ptrDspRegs = Jitmem::makeRelativePtr(&m_dsp.regs(), &m_dsp, argDspPtr, 8);
@@ -134,6 +146,8 @@ namespace dsp56k
 		m_asm.mov(asmjit::x86::ptr(asmjit::x86::regs::rsp, g_slotPeriphFunc, 8), asmjit::x86::rax);
 		m_asm.mov(asmjit::x86::rax, asmjit::Imm(targetClock));
 		m_asm.mov(asmjit::x86::ptr(asmjit::x86::regs::rsp, g_slotClockPtr, 8), asmjit::x86::rax);
+		m_asm.mov(asmjit::x86::rax, asmjit::Imm(reinterpret_cast<const void*>(&funcCreate)));
+		m_asm.mov(asmjit::x86::ptr(asmjit::x86::regs::rsp, g_slotFuncCreate, 8), asmjit::x86::rax);
 #endif
 
 		const auto label = m_asm.newNamedLabel("beginExec8times");
@@ -167,9 +181,24 @@ namespace dsp56k
 			m_asm.blr(g_funcToCall);
 			m_asm.bind(lSkipInt);
 
-			m_asm.ldr(g_funcToCall, Jitmem::makePtr(g_ptrJitEntries, 8));
+			// The PC is a value the guest program computes -- a jmp through a register, an rts
+			// to a stacked address, an interrupt vector -- and nothing about it is bounded by
+			// the size of the entry table. Reading the table at it unconditionally is the
+			// defect this test removes. An index the table does not have takes funcCreate,
+			// which is what an index it does have holds until a block is made there, so the
+			// two cases need one answer and not two. The in-range path falls through and the
+			// branch is the one that is never taken.
+			const auto lEntryChosen = m_asm.newLabel();
+
 			m_asm.ldr(r32(g_funcArgGPs[1]), Jitmem::makePtr(g_ptrPC, 4));
+			m_asm.mov(g_funcToCall, g_funcCreate);
+			m_asm.ldr(r32(g_funcArgGPs[0]), Jitmem::makeRelativePtr(&m_dsp.getJitEntriesSize(), &m_dsp.getJitEntries(), g_ptrJitEntries, 4));
+			m_asm.cmp(r32(g_funcArgGPs[1]), r32(g_funcArgGPs[0]));
+			m_asm.b(asmjit::arm::CondCode::kHS, lEntryChosen);
+			m_asm.ldr(g_funcToCall, Jitmem::makePtr(g_ptrJitEntries, 8));
 			m_asm.ldr(g_funcToCall, Jitmem::makePtr(g_funcToCall, g_funcArgGPs[1], 3, 8));
+			m_asm.bind(lEntryChosen);
+
 			m_asm.mov(r64(g_funcArgGPs[0]), regDspPtr);
 			m_asm.blr(g_funcToCall);
 #else
@@ -196,9 +225,18 @@ namespace dsp56k
 			m_asm.mov(dsp, asmjit::x86::ptr(asmjit::x86::regs::rsp, g_slotDsp, 8));
 			m_asm.bind(lSkipInt);
 
-			m_asm.mov(g_funcToCall, Jitmem::makeRelativePtr(&m_dsp.getJitEntries(), &m_dsp, dsp, 8));
+			// see the ARM path above for what this bound is and why the out of range case
+			// resolves to funcCreate rather than to an outcome of its own
+			const auto lEntryChosen = m_asm.newLabel();
+
 			m_asm.mov(r32(g_funcArgGPs[1]), Jitmem::makeRelativePtr(&m_dsp.regs().pc.var, &m_dsp, dsp, 4));
-			m_asm.mov(g_funcToCall, Jitmem::makePtr(g_funcToCall, g_funcArgGPs[1], 3, 8));
+			m_asm.mov(g_funcToCall, asmjit::x86::ptr(asmjit::x86::regs::rsp, g_slotFuncCreate, 8));
+			m_asm.cmp(r32(g_funcArgGPs[1]), Jitmem::makeRelativePtr(&m_dsp.getJitEntriesSize(), &m_dsp, dsp, 4));
+			m_asm.jae(lEntryChosen);
+			m_asm.mov(scratchA, Jitmem::makeRelativePtr(&m_dsp.getJitEntries(), &m_dsp, dsp, 8));
+			m_asm.mov(g_funcToCall, Jitmem::makePtr(scratchA, g_funcArgGPs[1], 3, 8));
+			m_asm.bind(lEntryChosen);
+
 			m_asm.mov(r64(g_funcArgGPs[0]), regDspPtr);
 			m_asm.call(g_funcToCall);
 #endif
@@ -219,6 +257,7 @@ namespace dsp56k
 		m_asm.pop(asmjit::a64::regs::x30);
 #endif
 #ifdef HAVE_ARM64
+		m_asm.pop(r64(g_funcCreate));
 		m_asm.pop(r64(g_ptrInstructions));
 		m_asm.pop(r64(g_ptrTargetClock));
 		m_asm.pop(r64(g_periphFunc));

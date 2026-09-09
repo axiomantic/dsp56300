@@ -108,6 +108,9 @@ namespace dsp56k
 		TInterruptFunc					m_interruptFunc;
 
 		const TJitFunc*					m_jitEntries = nullptr;
+		// Kept next to the pointer it bounds, and read by the generated exec loop as well as
+		// by jitEntry() below. A table that grows keeps this in step through setJitEntries.
+		TWord							m_jitEntriesSize = 0;
 		CCRCache						ccrCache;
 
 		// The lock-free ring buffer's counters are now atomic (release/acquire), so it is correct on ARM too -
@@ -190,7 +193,7 @@ namespace dsp56k
 			LOGJITPC(pc);
 			// must go through the trampoline: it establishes regDspPtr, which blocks no longer set up
 			// themselves. A direct call here leaves regDspPtr at whatever the caller happened to have.
-			m_jit.getTrampoline().execOne(&reg, pc, m_jitEntries[pc]);
+			m_jit.getTrampoline().execOne(&reg, pc, jitEntry(pc));
 		}
 
 		ASMJIT_FORCE_INLINE void execInterpreter() noexcept
@@ -329,8 +332,22 @@ namespace dsp56k
 		Jit&			getJit							() { return m_jit; }
 		const Jit&		getJit							() const { return m_jit; }
 
-		void			setJitEntries					(const TJitFunc* _funcs)			{ m_jitEntries = _funcs; }
+		void			setJitEntries					(const TJitFunc* _funcs, const TWord _size)	{ m_jitEntries = _funcs; m_jitEntriesSize = _size; }
 		const auto&		getJitEntries					() const			{ return m_jitEntries; }
+		const auto&		getJitEntriesSize				() const			{ return m_jitEntriesSize; }
+
+		// The only read of the entry table in C++. The index is a guest PC: a value the
+		// program computes and can put anywhere in 24 bits, while the table is sized to P
+		// memory, which is smaller. A jmp through a register, an rts to a stacked address
+		// and an interrupt vector all reach here with one, and none of them is constrained
+		// by what the table happens to cover.
+		//
+		// An index the table does not have resolves to funcCreate, which is what an index it
+		// does have holds until a block is made there. So the out-of-range case needs no
+		// behaviour of its own: it takes the create path, that path grows the table where
+		// growing is possible, and it is the one place that has to decide what a PC outside
+		// emulated P memory means.
+		TJitFunc		jitEntry						(const TWord _pc) const noexcept	{ return _pc < m_jitEntriesSize ? m_jitEntries[_pc] : &funcCreate; }
 
 		const auto&		getInterruptFunc				() const			{ return m_interruptFunc; }
 		auto			getExecPeripheralsFunc			() const			{ return m_execPeripheralsFunc; }
