@@ -141,6 +141,9 @@ namespace dsp56k
 		lra();
 		lsl();
 		lsr();
+		lslLsrOversizedShift();
+		asrOversizedShift();
+		asrCarry();
 		lua_ea();
 		lua_rn();
 		mac();
@@ -2261,6 +2264,129 @@ namespace dsp56k
 		{
 			verify(dsp.aluA().var == 0xab000000445566);
 		});
+	}
+
+	// ASR in the range the manual does define. The carry is the last bit shifted out, which
+	// for a count of n is bit n-1 of the accumulator, and a count of zero clears it. The
+	// accumulators below are positive with bits 0 and 7 set, and negative with both clear,
+	// so the carry the definition asks for is never equal to the sign bit.
+	void UnitTests::asrCarry()
+	{
+		struct Case
+		{
+			TWord count;
+			TReg56::MyType alu;
+			TReg56::MyType result;
+			bool carry;
+		};
+
+		for(const Case& c : {
+			Case{ 0, static_cast<TReg56::MyType>(0xff123456789a00), static_cast<TReg56::MyType>(0xff123456789a00), false },
+			Case{ 0, static_cast<TReg56::MyType>(0x00123456789a81), static_cast<TReg56::MyType>(0x00123456789a81), false },
+			Case{ 1, static_cast<TReg56::MyType>(0x00123456789a81), static_cast<TReg56::MyType>(0x00091a2b3c4d40), true  },
+			Case{ 1, static_cast<TReg56::MyType>(0xff123456789a00), static_cast<TReg56::MyType>(0xff891a2b3c4d00), false },
+			Case{ 8, static_cast<TReg56::MyType>(0x00123456789a81), static_cast<TReg56::MyType>(0x0000123456789a), true  },
+			Case{ 8, static_cast<TReg56::MyType>(0xff123456789a00), static_cast<TReg56::MyType>(0xffff123456789a), false }})
+		{
+			runTest([&]()
+			{
+				dsp.x0(c.count);
+				dsp.setALU(false, TReg56(c.alu));
+				emit("asr x0,a,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == c.result);
+				verify((dsp.sr_test(CCR_C) != 0) == c.carry);
+			});
+		}
+	}
+
+	// ASR's count comes from the low six bits of the source register, so counts up to 63
+	// reach the ALU while the accumulator is 56 bits wide. The manual declares the result
+	// undefined above 55: it names no value there, so the cases below are not read off the
+	// manual and are not a claim about the hardware. The emulator masks the count to six
+	// bits and lets the shift run; these cases record that reading and hold the
+	// interpreter and the two JIT back ends to it, in a region where nothing else does.
+	//
+	// An arithmetic shift right feeds the sign bit in at the top, so once the operand is
+	// exhausted the accumulator holds nothing but the sign and every bit still leaving is
+	// that sign bit.
+	void UnitTests::asrOversizedShift()
+	{
+		for(const TWord shiftAmount : {56u, 57u, 63u})
+		{
+			runTest([&]()
+			{
+				dsp.x0(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xff800000000000)));
+				emit("asr x0,a,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xffffffffffffff);
+				verify(dsp.sr_test(CCR_C));
+			});
+
+			runTest([&]()
+			{
+				dsp.x0(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0x00800000000000)));
+				emit("asr x0,a,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0);
+				verify(!dsp.sr_test(CCR_C));
+			});
+		}
+	}
+
+	// The register form of LSL and LSR takes the low six bits of the source register, so
+	// counts up to 63 reach the ALU while the operand is 24 bits wide. The manual gives the
+	// six bit count for ASL and ASR only; for LSL and LSR it says the count should not
+	// exceed 24 and names no result beyond that. Every count below is above 24, so these
+	// values are not read off the manual either. The emulator masks the count to six bits
+	// and shifts the whole operand out; these cases record that reading and hold the three
+	// implementations to it.
+	//
+	// A 32 bit machine shift cannot express the range at all: x86 and arm64 both truncate
+	// the count of a 32 bit shift to five bits, so a count of 32 shifted by nothing and
+	// returned the operand unchanged.
+	//
+	//   result  every count here is 24 or more, so all 24 bits of a1 leave the operand and
+	//           a1 is zero. LSL and LSR write a1 only, so a2 and a0 stay at 0xab and
+	//           0x445566 and the accumulator reads 0xab000000445566.
+	//   carry   the last bit shifted out of the operand. No bit of the operand is still
+	//           leaving at these counts, so the carry is clear.
+	void UnitTests::lslLsrOversizedShift()
+	{
+		for(const TWord shiftAmount : {32u, 40u, 63u})
+		{
+			runTest([&]()
+			{
+				dsp.x1(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+				emit("lsl x1,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xab000000445566);
+				verify(!dsp.sr_test(CCR_C));
+			});
+
+			runTest([&]()
+			{
+				dsp.x1(shiftAmount);
+				dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0xab112233445566)));
+				emit("lsr x1,a");
+			},
+				[&]()
+			{
+				verify(dsp.aluA().var == 0xab000000445566);
+				verify(!dsp.sr_test(CCR_C));
+			});
+		}
 	}
 
 	void UnitTests::lsr()

@@ -2,6 +2,10 @@
 
 #include "dsp.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include <iomanip>
 #include <cstring>
 #include <cstdio>
@@ -14,6 +18,7 @@
 #include "debuggerinterface.h"
 #include "dspconfig.h"
 #include "interrupts.h"
+#include "peripherals56311.h"
 #include "opcodecycles.h"
 
 #include "dsp_decode.inl"
@@ -71,6 +76,7 @@ namespace dsp56k
 		if(const auto func = findExecPeripheralsFuncT<Peripherals56362, Peripherals56367>(_pX, _pY))	return func;
 		if(const auto func = findExecPeripheralsFuncT<Peripherals56303, PeripheralsNop>(_pX, _pY))		return func;
 		if(const auto func = findExecPeripheralsFuncT<PeripheralsNop, PeripheralsNop>(_pX, _pY))		return func;
+		if(const auto func = findExecPeripheralsFuncT<Peripherals56311, Peripherals56311Y>(_pX, _pY))	return func;
 		assert(false && "Peripherals configuration is not supported");
 		return nullptr;
 	}
@@ -130,10 +136,15 @@ namespace dsp56k
 
 		reg.sz.var = 0xbadbad; // The SZ register is not initialized during hardware reset, and must be set, using a MOVEC instruction, prior to enabling the stack extension.
 
-		const CCRMask srClear	= static_cast<CCRMask>(SR_RM | SR_SM | SR_CE | SR_SA | SR_FV | SR_LF | SR_DM | SR_SC | SR_S0 | SR_S1 | 0xf);
-		const CCRMask srSet		= static_cast<CCRMask>(SR_CP0 | SR_CP1 | SR_I0 | SR_I1);
+		// The reset mask spans both halves of the status register, so it is applied
+		// as one SRMask and one CCRMask rather than as a single value cast to an
+		// enum that cannot represent it.
+		const SRMask  srClear	= static_cast<SRMask>(SR_RM | SR_SM | SR_CE | SR_SA | SR_FV | SR_LF | SR_DM | SR_SC | SR_S0 | SR_S1);
+		const CCRMask ccrClear	= static_cast<CCRMask>(0xf);
+		const SRMask  srSet		= static_cast<SRMask>(SR_CP0 | SR_CP1 | SR_I0 | SR_I1);
 
 		sr_clear( srClear );
+		sr_clear( ccrClear );
 		sr_set	( srSet );
 
 		resetCCRCache();
@@ -205,7 +216,7 @@ namespace dsp56k
 		{
 			LOGJITPC(vba);
 			const auto pc = getPC();
-			m_jit.getTrampoline().execOne(&reg, vba, m_jitEntries[vba]);
+			m_jit.getTrampoline().execOne(&reg, vba, jitEntry(vba));
 			if(m_processingMode != LongInterrupt)
 			{
 				m_processingMode = DefaultPreventInterrupt;
@@ -476,9 +487,23 @@ namespace dsp56k
 	//
 	bool DSP::do_exec( TWord _loopcount, TWord _addr )
 	{
+		return do_execImpl(_loopcount, _addr, false);
+	}
+
+	// DSP56300 Family Manual rev 2.0, DO FOREVER, p.13-60/13-61: LC is pushed onto the
+	// system stack but NOT written, LF and FV are both set, and LC is decremented on every
+	// wrap "without being tested". The only exits are ENDDO and BRKcc. The bounded-count
+	// shape does not exist on the part, so there is no loop count to pass here.
+	bool DSP::do_execForever( TWord _addr )
+	{
+		return do_execImpl(0, _addr, true);
+	}
+
+	bool DSP::do_execImpl( TWord _loopcount, TWord _addr, const bool _forever )
+	{
 	//	LOG( "DO BEGIN: " << (int)sc.var << ", loop flag = " << sr_test(SR_LF) );
 
-		if( !_loopcount )
+		if( !_forever && !_loopcount )
 		{
 			if( sr_test_noCache( SR_SC ) )
 				_loopcount = 65536;
@@ -493,13 +518,22 @@ namespace dsp56k
 		ssl(reg.lc);
 
 		reg.la.var = _addr;
-		reg.lc.var = _loopcount;
+
+		// DO FOREVER pushes LC but leaves it alone, so the program can seed it before the
+		// instruction and use it as its own pass counter.
+		if( !_forever )
+			reg.lc.var = _loopcount;
 
 		pushPCSR();
 
 		const auto stackCount = reg.sc.var;
-		
+
+		// FV names the innermost loop, not a mode: ENDDO and BRKcc are specified as
+		// SSL(LF,FV) -> SR, so the bit travels on the stack with LF and each DO must
+		// state its own kind. A counted DO nested inside a forever loop that inherited
+		// FV would be a loop the count can never retire.
 		sr_set( SR_LF );
+		sr_toggle( SR_FV, _forever );
 
 		if constexpr(!g_useJIT)
 			m_cycles += getOpcodeCycles(pcCurrentInstruction);
@@ -523,7 +557,7 @@ namespace dsp56k
 			if(!sr_test_noCache(SR_LF))
 				break;
 
-			if( reg.lc.var <= 1 )
+			if( !_forever && reg.lc.var <= 1 )
 			{
 				// restore PC to point to the next instruction after the last instruction of the loop
 				setPC(reg.la.var+1);
@@ -532,7 +566,9 @@ namespace dsp56k
 				break;
 			}
 
-			--reg.lc.var;
+			// LC is 24 bits wide and a DO FOREVER loop decrements it past zero, so the
+			// wrap is part of the contract rather than an overflow to guard against.
+			reg.lc.var = (reg.lc.var - 1) & 0x00ffffff;
 			setPC(hiword(reg.ss[ssIndex()]));
 		}
 		return true;
@@ -1422,20 +1458,26 @@ aar0=$000008 aar1=$000000 aar2=$000000 aar3=$000000
 		const auto str(ss.str());
 		LOG(str);
 
-		// LOG goes to the debugger on Windows, and the assert below is compiled out of release
-		// builds, which would leave an unimplemented instruction silently doing nothing at all.
-		// Say so on stderr regardless of build type, as the JIT side already does.
+		// LOG goes to the debugger on Windows, so say it on stderr regardless of build type.
 		fprintf(stderr, "*** DSP errNotImplemented: %s at PC $%06X\n", _opName, pcCurrentInstruction);
 		fflush(stderr);
 
-		// A two word instruction leaves its extension word unconsumed: the dispatcher advanced PC by
-		// one and only the missing implementation would have fetched the second word. Without this
-		// the PC lands ON the immediate and executes it as an instruction - one observed case decoded
-		// as a MOVEP into a peripheral - so skipping the whole instruction is the least wrong thing
-		// we can do in a release build, where the assert below is gone.
-		setPC(pcCurrentInstruction + m_opcodes.getOpcodeLength(memRead(MemArea_P, pcCurrentInstruction)));
+		// Assert::show directly rather than through assert(): that macro expands to
+		// nothing without _DEBUG, and a release build then continued past the
+		// unimplemented opcode indistinguishably from having executed it. Reaching one
+		// is a defect in the emulator, and the only exit that cannot be mistaken for
+		// success is the one this project already uses for a fatal condition.
+		Assert::show("instruction not implemented, see console for details", __func__, __LINE__);
 
-		assert(false && "instruction not implemented, see console for details");
+		// Assert::show logs and throws on most platforms, but on Windows it returns.
+		// An unimplemented opcode has to be unsurvivable on every platform: a return
+		// here is indistinguishable to the caller from having executed the
+		// instruction.
+		//
+		// Upstream instead skips the opcode's full length and carries on. That recovery
+		// is unreachable once this throws, so it is not carried here: the fork wants the
+		// failure to stop the run rather than to be survived.
+		throw std::runtime_error("instruction not implemented, see console for details");
 	}
 
 	void DSP::updatePreviousRegisterStates()

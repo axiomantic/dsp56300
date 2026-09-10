@@ -651,12 +651,23 @@ namespace dsp56k
 				left only by ENDDO. Which kind of loop this is was settled when the block was
 				compiled, so a counted DO emits exactly what it always did.
 			*/
-			if(!isLoopForever)
-			{
-				m_asm.cmp(lc, asmjit::Imm(1));
-				m_asm.jle(enddo);
-				m_asm.dec(lc);
-			}
+			// SR.FV marks a DO FOREVER loop. Its LC is decremented on every wrap but never
+			// tested, so the count must not be allowed to retire the loop: only ENDDO or
+			// BRKcc may, and both clear LF above. Tested at run time rather than through the
+			// compile-time isLoopForever flag because a counted DO nested inside a forever
+			// loop shares the block's flag but must still retire on its own count.
+			const auto wrap = m_asm.newLabel();
+
+			m_asm.bitTest(sr, SRB_FV);
+			m_asm.jnz(wrap);
+
+			m_asm.cmp(lc, asmjit::Imm(1));
+			m_asm.jle(enddo);
+
+			m_asm.bind(wrap);
+			m_asm.dec(lc);
+			// LC is architecturally 24 bits and a forever loop drives it through zero
+			m_asm.and_(lc, asmjit::Imm(0xffffff));
 
 			if(isLoopBody)
 			{
