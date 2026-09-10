@@ -46,6 +46,9 @@ opcodeinfo.h
 opcodetypes.h
 peripherals.cpp peripherals.h
 peripherals56311.cpp peripherals56311.h
+dax.cpp dax.h
+shi.cpp shi.h
+externalbusdevice.h
 registers.cpp registers.h
 timers.cpp timers.h
 types.cpp types.h
@@ -130,6 +133,10 @@ if(DSP56300_DEBUGGER)
 	target_compile_definitions(dsp56kEmu PUBLIC DSP56300_DEBUGGER=1)
 else()
 	target_compile_definitions(dsp56kEmu PUBLIC DSP56300_DEBUGGER=0)
+endif()
+
+if(DSP56K_FORCE_INTERPRETER)
+	target_compile_definitions(dsp56kEmu PUBLIC DSP56K_FORCE_INTERPRETER=1)
 endif()
 
 # This should use ${PROJECT_SOURCE_DIR}/source if the top level of the repo

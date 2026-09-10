@@ -128,7 +128,7 @@ namespace dsp56k
 		void op_Cmp_xxS2(TWord op);
 		void op_Cmp_xxxxS2(TWord op);
 		void op_Cmpm_S1S2(TWord op);
-		void op_Cmpu_S1S2(TWord op)			{ errNotImplemented(op); }
+		void op_Cmpu_S1S2(TWord op);
 		void op_Debug(TWord op);
 		void op_Debugcc(TWord op);
 		void op_Dec(TWord op);
@@ -144,13 +144,13 @@ namespace dsp56k
 		void op_Dor_aa(TWord op)			{ errNotImplemented(op); }
 		void op_Dor_xxx(TWord op);
 		void op_Dor_S(TWord op);
-		void op_DorForever(TWord op)		{ errNotImplemented(op); }
+		void op_DorForever(TWord op);
 		void op_Enddo(TWord op);
 		void op_Eor_SD(TWord op);
 		void op_Eor_xx(TWord op);
-		void op_Eor_xxxx(TWord op)			{ errNotImplemented(op); }
-		void op_Extract_S1S2(TWord op)		{ errNotImplemented(op); }
-		void op_Extract_CoS2(TWord op)		{ errNotImplemented(op); }
+		void op_Eor_xxxx(TWord op);
+		void op_Extract_S1S2(TWord op);
+		void op_Extract_CoS2(TWord op);
 		void op_Extractu_S1S2(TWord op);
 		void op_Extractu_CoS2(TWord op);
 		template<bool BackupCCR> void op_Ifcc(TWord op);
@@ -203,7 +203,7 @@ namespace dsp56k
 		void op_Macri_xxxx(TWord op)	{ errNotImplemented(op); }
 		void op_Max(TWord op);
 		void op_Maxm(TWord op);
-		void op_Merge(TWord op)			{ errNotImplemented(op); }
+		void op_Merge(TWord op);
 		void op_Move_Nop(TWord op);
 		void op_Move_xx(TWord op);
 		void op_Mover(TWord op);
@@ -241,10 +241,10 @@ namespace dsp56k
 		template<Instruction Inst, bool Accumulate> void op_Mpy_su(TWord op);
 		void op_Mpyi(TWord op);
 		void op_Mpyr_S1S2D(TWord op)			{ alu_multiply(op); }
-		void op_Mpyri(TWord op)					{ errNotImplemented(op); }
+		void op_Mpyri(TWord op);
 		void op_Neg(TWord op);
 		void op_Nop(TWord op);
-		void op_Norm(TWord op)					{ errNotImplemented(op); }
+		void op_Norm(TWord op);
 		void op_Normf(TWord op);
 		void op_Not(TWord op);
 		void op_Or_SD(TWord op);
@@ -258,8 +258,8 @@ namespace dsp56k
 		void op_Plockr(TWord op)				{ errNotImplemented(op); }
 		void op_Punlock(TWord op)				{ errNotImplemented(op); }
 		void op_Punlockr(TWord op)				{ errNotImplemented(op); }
-		void op_Rep_ea(TWord op)				{ errNotImplemented(op); }
-		void op_Rep_aa(TWord op)				{ errNotImplemented(op); }
+		void op_Rep_ea(TWord op);
+		void op_Rep_aa(TWord op);
 		void op_Rep_xxx(TWord op);
 		void op_Rep_S(TWord op);
 		void op_Reset(TWord op);
@@ -311,8 +311,8 @@ namespace dsp56k
 
 		void signextend24to56(const JitReg64& _reg) const;
 
-		static void signextend24to64(JitEmitter& _a, const JitReg64& _dst, const JitReg64& _src);
-		void signextend24to64(const JitReg64& _dst, const JitReg64& _src) const;
+		static void signextend24to64(JitEmitter& _a, const JitReg64& _dst, const JitReg64& _src, uint32_t _shift = 0);
+		void signextend24to64(const JitReg64& _dst, const JitReg64& _src, uint32_t _shift = 0) const;
 		void signextend24to64(const JitReg64& _reg) const { return signextend24to64(_reg, _reg); }
 
 		void signextend24To32(const JitReg32& _reg) const;
@@ -320,6 +320,8 @@ namespace dsp56k
 		void bitreverse24(const JitReg32& x) const;
 
 		bool isPeriphAddress(const TWord _addr) const;
+		bool isExternalBusAddress(TWord _addr) const;
+		bool isCppHandledAddress(TWord _addr) const;	// peripherals or an external bus device, anything that is not plain memory
 		TWord getPeriphStartAddr() const;
 
 		// The main AGU entry point.
@@ -357,6 +359,8 @@ namespace dsp56k
 
 		void callDSPFunc(void(* _func)(DSP*, TWord), TWord _arg) const;
 		void callDSPFunc(void(* _func)(DSP*, TWord), const JitRegGP& _arg) const;
+		void callDSPFunc(void(* _func)(DSP*, TWord, TWord), TWord _argA, TWord _argB) const;
+		bool saBitfield(TWord _packed, TWord _control);
 
 		void setDspProcessingMode(uint32_t _mode) const;
 		void getDspProcessingMode(const JitRegGP& _dst) const;
@@ -444,15 +448,15 @@ namespace dsp56k
 		void getSR(DspValue& _dst);
 		void setSR(const DspValue& _src);
 
-		void getXY0(DspValue& _dst, uint32_t _aluIndex, bool _signextend) const;
+		void getXY0(DspValue& _dst, uint32_t _aluIndex, bool _signextend, uint32_t _shift = 0) const;
 		void setXY0(uint32_t _xy, const DspValue& _src);
-		void getXY1(DspValue& _dst, uint32_t _aluIndex, bool _signextend) const;
+		void getXY1(DspValue& _dst, uint32_t _aluIndex, bool _signextend, uint32_t _shift = 0) const;
 		void setXY1(uint32_t _xy, const DspValue& _src);
 
-		void getX0(DspValue& _dst, bool _signextend) const { return getXY0(_dst, 0, _signextend); }
-		void getY0(DspValue& _dst, bool _signextend) const { return getXY0(_dst, 1, _signextend); }
-		void getX1(DspValue& _dst, bool _signextend) const { return getXY1(_dst, 0, _signextend); }
-		void getY1(DspValue& _dst, bool _signextend) const { return getXY1(_dst, 1, _signextend); }
+		void getX0(DspValue& _dst, bool _signextend, uint32_t _shift = 0) const { return getXY0(_dst, 0, _signextend, _shift); }
+		void getY0(DspValue& _dst, bool _signextend, uint32_t _shift = 0) const { return getXY0(_dst, 1, _signextend, _shift); }
+		void getX1(DspValue& _dst, bool _signextend, uint32_t _shift = 0) const { return getXY1(_dst, 0, _signextend, _shift); }
+		void getY1(DspValue& _dst, bool _signextend, uint32_t _shift = 0) const { return getXY1(_dst, 1, _signextend, _shift); }
 
 		void getALU0(DspValue& _dst, uint32_t _aluIndex) const;
 		void getALU1(DspValue& _dst, uint32_t _aluIndex) const;
@@ -472,9 +476,19 @@ namespace dsp56k
 		void incSP() const;
 
 		void transferAluTo24(DspValue& _dst, TWord _alu);
-		void transfer24ToAlu(TWord _alu, const DspValue& _src) const;
+		void transfer24ToAlu(TWord _alu, const DspValue& _src, bool _sourceIs8Bit = false) const;
 		void transferSaturation24(const JitReg64& _dst, const JitReg64& _src);
 		void transferSaturation48(const JitReg64& _dst, const JitReg64& _src);
+
+		// Sixteen-bit Arithmetic mode bus transfers (FM 3.5.1)
+		bool isSixteenBitArithmetic() const;
+		void transferSaturation16(const JitReg64& _dst, const JitReg64& _src);
+		void busToReg16(DspValue& _dst, const DspValue& _src) const;
+		void busToReg16InPlace(DspValue& _value) const;
+		const DspValue& busToRegSA(const DspValue& _src, DspValue& _temp) const;
+		void reg16ToBus(DspValue& _value) const;
+		void sixteenBitLongToAlu(TWord _alu, const DspValue& _x, const DspValue& _y);
+		void aluToSixteenBitLong(TWord _alu, DspValue& _x, DspValue& _y);
 
 		// CCR
 		class CcrBatchUpdate
@@ -570,9 +584,9 @@ namespace dsp56k
 		DspValue decode_JJJ_read_56(TWord _jjj, bool _b) const;
 		void decode_JJ_read(DspValue& _dst, TWord jj) const;
 		DspValue decode_RRR_read(TWord _rrr, int _shortDisplacement = 0);
-		void decode_qq_read(DspValue& _dst, TWord _qq, bool _signextend);
-		void decode_QQ_read(DspValue& _dst, TWord _qq, bool _signextend);
-		void decode_QQQQ_read(DspValue& _s1, bool _signextendS1, DspValue& _s2, bool _signextendS2, TWord _qqqq) const;
+		void decode_qq_read(DspValue& _dst, TWord _qq, bool _signextend, uint32_t _shift = 0);
+		void decode_QQ_read(DspValue& _dst, TWord _qq, bool _signextend, uint32_t _shift = 0);
+		void decode_QQQQ_read(DspValue& _s1, bool _signextendS1, DspValue& _s2, bool _signextendS2, TWord _qqqq, uint32_t _s1Shift = 0) const;
 		void decode_qqq_read(DspValue& _dst, TWord _qqq) const;
 		void decode_sss_read(DspValue& _dst, TWord _sss) const;
 		void decode_LLL_read(TWord _lll, DspValue& x, DspValue& y);
@@ -597,8 +611,8 @@ namespace dsp56k
 
 		void alu_and(TWord ab, DspValue& _v);
 
-		void alu_asl(TWord _abSrc, TWord _abDst, const ShiftReg* _v, TWord _bits = 0);
-		void alu_asr(TWord _abSrc, TWord _abDst, const ShiftReg* _v, TWord _immediate = 0);
+		void alu_asl(TWord _abSrc, TWord _abDst, const ShiftReg* _v, TWord _bits = 0, bool _updateCarry = true);
+		void alu_asr(TWord _abSrc, TWord _abDst, const ShiftReg* _v, TWord _immediate = 0, bool _updateCarry = true);
 
 		void alu_bclr(const DspValue& _dst, TWord _bit);
 		void alu_bset(const DspValue& _dst, TWord _bit);
@@ -609,12 +623,14 @@ namespace dsp56k
 		void alu_lsl(TWord ab, const DspValue& _shiftAmount);
 		void alu_lsr(TWord ab, const DspValue& _shiftAmount);
 		void alu_eor(TWord ab, DspValue& _v);
-		void alu_mpy(TWord ab, DspValue& _s1, DspValue& _s2, bool _negate, bool _accumulate, bool _s1Unsigned, bool _s2Unsigned, bool _round);
+		void alu_extract(TWord _abDst, TWord _abSrc, DspValue& _widthOffset, bool _signExtend);
+		void alu_mpy(TWord ab, DspValue& _s1, DspValue& _s2, bool _negate, bool _accumulate, bool _s1Unsigned, bool _s2Unsigned, bool _round, uint32_t _s1Shift = 0);
 		void alu_multiply(TWord op);
 		void alu_or(TWord ab, DspValue& _v);
 		void alu_rnd(TWord ab);
 		void alu_rnd(TWord ab, const JitReg64& d, bool _needsSignextend = true);
 		void alu_insert(TWord ab, const DspValue& _src, DspValue& _widthOffset);
+		void decodeBitfieldControl(const DspValue& _control, const JitRegGP& _width, const JitRegGP& _offset);
 		
 		template<Instruction Inst> void bitmod_ea(TWord _op, void(JitOps::*_bitmodFunc)(const DspValue&, TWord));
 		template<Instruction Inst> void bitmod_aa(TWord _op, void(JitOps::*_bitmodFunc)(const DspValue&, TWord));
@@ -637,7 +653,10 @@ namespace dsp56k
 		// loops
 		void do_exec(const DspValue& _lc, TWord _addr);
 		void do_execForever(TWord _addr);
+		void do_start(const DspValue* _lc, TWord _addr);
 		void do_end(const RegGP& _temp);
+		void emitLoopEndBeforeBranch(bool _loopStartIsBlockStart, bool _loopIsForever, TWord _blockPc, TWord _pcAfterBranch);
+		void setPushPCFromReg(const bool _v) { m_pushPCFromReg = _v; }
 		void do_end();
 		void rep_exec(TWord _lc);
 		void rep_exec(DspValue& _lc);
@@ -715,6 +734,7 @@ namespace dsp56k
 		std::vector<DspValue> m_repTemps;
 		RegisterMask m_writtenRegs = RegisterMask::None;
 		RegisterMask m_readRegs = RegisterMask::None;
+		bool m_pushPCFromReg = false;
 		FastInterruptMode m_fastInterruptMode;
 		bool m_disableCCRUpdates = false;
 	};

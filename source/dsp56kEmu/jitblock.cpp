@@ -51,22 +51,45 @@ namespace dsp56k
 
 		_info.pc = _pc;
 
+		/*	Whether a loop is a DO FOREVER is a property of the DO that opened it, so it can be
+			settled here instead of testing SR_FV at runtime on every iteration of every loop. Both
+			forever opcodes are fixed 24 bit words with no operand fields, so comparing the word is
+			exact.
+		*/
+		auto isForeverLoop = [&_dsp](const TWord _doPc)
+		{
+			const auto op = _dsp.memory().get(MemArea_P, _doPc);
+			return op == g_opcodes[DoForever].m_mask1 || op == g_opcodes[DorForever].m_mask1;
+		};
+
+		/*	A block can end a loop without beginning it, so the opening DO has to be found through
+			the loop map rather than at a fixed offset. Loop ends are unique, one begin per end, so
+			the first match is the right one.
+		*/
+		auto markForeverLoopEndingAt = [&](const TWord _loopEnd)
+		{
+			if(_info.hasFlag(JitBlockInfo::Flags::IsLoopForever))
+				return;
+
+			for (const auto& loop : _loopStarts)
+			{
+				if(loop.second != _loopEnd)
+					continue;
+
+				if(isForeverLoop(loop.first))
+					_info.addFlag(JitBlockInfo::Flags::IsLoopForever);
+				break;
+			}
+		};
+
 		if(_loopStarts.find(_pc - 2) != _loopStarts.end())
 		{
 			assert(_pc == hiword(_dsp.regs().ss[_dsp.ssIndex()]).toWord());
 			_info.addFlag(JitBlockInfo::Flags::IsLoopBodyBegin);
 
-			// The instruction that opened this loop sits two words back: one opcode word and
-			// one absolute-address extension word. Decode it rather than matching the raw
-			// word so the opcode table stays the single source of truth.
-			TWord opDoA, opDoB;
-			_dsp.memory().getOpcode(_pc - 2, opDoA, opDoB);
-
-			Instruction instDoA, instDoB;
-			opcodes.getInstructionTypes(opDoA, instDoA, instDoB);
-
-			if(instDoA == DoForever)
-				_info.addFlag(JitBlockInfo::Flags::IsForeverLoopBody);
+			// the DO sits immediately in front of the body, which is what the lookup above assumes
+			if(isForeverLoop(_pc - 2))
+				_info.addFlag(JitBlockInfo::Flags::IsLoopForever);
 		}
 		else
 		{
@@ -181,6 +204,33 @@ namespace dsp56k
 					terminationReason = JitBlockInfo::TerminationReason::Branch;
 					_info.branchTarget = getBranchTarget(instA, opA, opB, pc);
 					_info.branchIsConditional = hasField(instA, Field_CCCC) || hasField(instA, Field_bbbbb);
+
+					/*	A call or jump can be the loop's last instruction. The loop-end check further
+						down never sees it, because we break here first - so record it now. The block
+						still terminates as a Branch, but emit() has to run the loop bookkeeping
+						BEFORE the branch executes, the way hardware retires the loop at fetch.
+					*/
+					if(_config.supportBranchAtLoopEnd && _loopEnds.find(_pc + numWords) != _loopEnds.end())
+					{
+						// we break out before the loop-end check below, so classify the loop here too
+						markForeverLoopEndingAt(_pc + numWords);
+
+						/*	Unconditional only: a conditional branch gets its fall-through chained
+							directly to the block at pcLast, which bypasses the loop-back we would
+							write into the PC. Such a loop keeps the old, wrong behaviour - say so
+							rather than let the next device that enables this find out by itself.
+						*/
+						if(_info.branchIsConditional)
+						{
+							LOG("Conditional branch at the end of a DO loop at " << HEX(pc) << ", supportBranchAtLoopEnd does not cover this - the loop will run a single iteration and leave LA/LC on the stack");
+							assert(false && "conditional branch at a DO loop end is not supported");
+						}
+						else
+						{
+							_info.addFlag(JitBlockInfo::Flags::BranchAtLoopEnd);
+						}
+					}
+
 					break;
 				}
 				if(flags & OpFlagPopPC)
@@ -210,8 +260,22 @@ namespace dsp56k
 			// always terminate block if loop end has reached
 			if(_loopEnds.find(_pc + numWords) != _loopEnds.end())
 			{
-				assert((_pc + numWords) == static_cast<TWord>(_dsp.regs().la.var + 1));
+				/*	la only describes the loop the DSP is inside right now, while a block is classified by
+					the loop registry, which is what makes the classification position independent. The two
+					can legitimately disagree: ENDDO leaves a loop but execution carries on through the
+					addresses it covered, so a block ending at that address is compiled with the loop already
+					gone. Only check the correspondence when we really are in a loop.
+
+					Still incomplete: do_end restores LF from the stack along with LA/LC, so LF only
+					ends up clear when the loop ENDDO left was the outermost one. An ENDDO inside a
+					nested loop restores LF=1 and the outer LA, and a block ending at the inner loop's
+					end trips this again. The guard narrows the false positive, it does not remove it -
+					the real invariant is that la describes this instant while the registry describes
+					the block, and the two are allowed to disagree.
+				*/
+				assert(!(_dsp.regs().sr.var & SR_LF) || (_pc + numWords) == static_cast<TWord>(_dsp.regs().la.var + 1));
 				terminationReason = JitBlockInfo::TerminationReason::LoopEnd;
+				markForeverLoopEndingAt(_pc + numWords);
 				break;
 			}
 
@@ -349,6 +413,26 @@ namespace dsp56k
 
 			JitOps ops(*this, _rt, fastInterruptMode);
 
+			/*	A call as the loop's last instruction: hardware retires the loop at fetch, so the
+				return address it pushes is already the loop start (or, on the last iteration, the
+				instruction after the loop). Emit that bookkeeping BEFORE the branch and make its
+				push take the PC register, rather than trying to rewrite the pushed entry after the
+				fact - the call's own frame would be sitting on top of the DO's by then.
+			*/
+			if(info.hasFlag(JitBlockInfo::Flags::BranchAtLoopEnd))
+			{
+				Instruction lastA, lastB;
+				m_dsp.opcodes().getInstructionTypes(opA, lastA, lastB);
+				const auto opLen = Opcodes::getOpcodeLength(opA, lastA, lastB);
+
+				if(pMemSize + opLen == info.memSize)
+				{
+					ops.emitLoopEndBeforeBranch(info.hasFlag(JitBlockInfo::Flags::IsLoopBodyBegin) != 0,
+						info.hasFlag(JitBlockInfo::Flags::IsLoopForever) != 0, _pc, opPC + opLen);
+					ops.setPushPCFromReg(true);
+				}
+			}
+
 			if (m_config.splitOpsByNops)	m_asm.nop();
 			ops.emit(opPC, opA, opB);
 			if (m_config.splitOpsByNops)	m_asm.nop();
@@ -393,7 +477,7 @@ namespace dsp56k
 		const auto isLoopStart = info.hasFlag(JitBlockInfo::Flags::IsLoopBodyBegin);
 		const auto isLoopEnd = info.terminationReason == JitBlockInfo::TerminationReason::LoopEnd;
 		const auto isLoopBody = isLoopStart && isLoopEnd;
-		const auto isForeverLoopBody = isLoopBody && info.hasFlag(JitBlockInfo::Flags::IsForeverLoopBody);
+		const auto isLoopForever = info.hasFlag(JitBlockInfo::Flags::IsLoopForever) != 0;
 
 		bool childIsConditional = false;
 
@@ -475,12 +559,13 @@ namespace dsp56k
 			if (!isLoopBody)
 				return false;
 
-			// A DO FOREVER loop has no count that can retire it, so closing the back edge
-			// inside the block would spin here until the process is killed: exec() would
-			// never return and the interrupt poll in DSP::execJit would never run again.
-			// Leaving the edge open costs one block re-entry per pass and is what makes the
-			// loop interruptible, exactly as the part specifies.
-			if (isForeverLoopBody)
+			/*	A DO FOREVER has no loop counter, so there is nothing to bound the in-block jump
+				with - maxDoIterations tests LC and LC never moves. Such a block would spin without
+				ever returning to the dispatcher and interrupts and peripherals would starve, so
+				leave the block every iteration instead. Decided when the block is compiled, so an
+				ordinary counted DO pays nothing for it.
+			*/
+			if (isLoopForever)
 				return false;
 
 			const SkipLabel skip(m_asm);
@@ -562,9 +647,15 @@ namespace dsp56k
 			m_asm.bitTest(sr, SRB_LF);
 			m_asm.jz(skip);
 
+			/*	A DO FOREVER never ends on the loop counter - it does not even load one - and is
+				left only by ENDDO. Which kind of loop this is was settled when the block was
+				compiled, so a counted DO emits exactly what it always did.
+			*/
 			// SR.FV marks a DO FOREVER loop. Its LC is decremented on every wrap but never
 			// tested, so the count must not be allowed to retire the loop: only ENDDO or
-			// BRKcc may, and both clear LF above.
+			// BRKcc may, and both clear LF above. Tested at run time rather than through the
+			// compile-time isLoopForever flag because a counted DO nested inside a forever
+			// loop shares the block's flag but must still retire on its own count.
 			const auto wrap = m_asm.newLabel();
 
 			m_asm.bitTest(sr, SRB_FV);

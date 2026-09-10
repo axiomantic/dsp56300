@@ -133,6 +133,34 @@ namespace dsp56k
 		d = oldD;
 	}
 	// _____________________________________________________________________________
+	// alu_cmpu
+	//
+	void DSP::alu_cmpu( bool ab, const TReg56& _val )
+	{
+		// CMPU compares two 48 bit UNSIGNED operands. The accumulator extension takes no part in the
+		// operation, and a 24 bit source has already been left-aligned and zero-filled by the decoder.
+		// E and U are unchanged by the instruction. Unlike the JIT, which can leave them lazy because it
+		// clears the dirty flags of the bits it writes, updateDirtyCCR() here recomputes E, U AND N in
+		// one go regardless of which of them are actually dirty - so anything left pending would clobber
+		// the N written below. Resolve it now, from the previous instruction's result.
+		updateDirtyCCR();
+
+		const TReg56& d = ab ? reg.b : reg.a;
+
+		constexpr uint64_t mask48 = 0x0000ffffffffffffull;
+
+		const uint64_t s2 = (static_cast<uint64_t>(d.var)    >> g_aluShift) & mask48;
+		const uint64_t s1 = (static_cast<uint64_t>(_val.var) >> g_aluShift) & mask48;
+
+		const uint64_t res = (s2 - s1) & mask48;
+
+		sr_toggle( CCR_Z, res == 0 );
+		sr_toggle( CCRB_N, Bit((res >> 47) & 1) );
+		sr_clear ( CCR_V );			// "always cleared"
+		sr_toggle( CCR_C, s1 > s2 );	// borrow out of bit 47
+	}
+
+	// _____________________________________________________________________________
 	// alu_sub
 	//
 	void DSP::alu_sub( bool ab, const TReg56& _val )
@@ -800,7 +828,12 @@ namespace dsp56k
 	}
 	inline void DSP::op_Cmpu_S1S2(const TWord op)
 	{
-		errNotImplemented("CMPU");
+		const auto D = getFieldValue<Cmpu_S1S2, Field_d>(op);
+		const auto ggg = getFieldValue<Cmpu_S1S2, Field_ggg>(op);
+		// ggg only defines 0 (the other accumulator) and 4..7 (x0, y0, x1, y1). Those encodings are
+		// identical to the ones JJJ uses, so the existing decoder covers every valid CMPU operand.
+		assert((ggg == 0 || ggg >= 4) && "invalid ggg value for CMPU");
+		alu_cmpu(D, decode_JJJ_read_56(ggg, !D));
 	}
 	inline void DSP::op_Dec(const TWord op)
 	{
@@ -887,22 +920,62 @@ namespace dsp56k
 	}
 	inline void DSP::op_Extract_S1S2(const TWord op)
 	{
-		errNotImplemented("EXTRACT");		
+		const auto sss = getFieldValue<Extract_S1S2, Field_SSS>(op);
+		const auto widthOffset = decode_sss_read<TWord>(sss);
+		const bool abDst = getFieldValue<Extract_S1S2, Field_D>(op);
+		const bool abSrc = getFieldValue<Extract_S1S2, Field_s>(op);
+		alu_extract(abDst, abSrc, widthOffset, true);
 	}
 	inline void DSP::op_Extract_CoS2(const TWord op)
 	{
-		errNotImplemented("EXTRACT");
+		const auto widthOffset = fetchOpWordB();
+		const bool abDst = getFieldValue<Extract_CoS2, Field_D>(op);
+		const bool abSrc = getFieldValue<Extract_CoS2, Field_s>(op);
+		alu_extract(abDst, abSrc, widthOffset, false);
 	}
 
-	inline void DSP::alu_extractu(bool abDst, bool abSrc, const TWord widthOffset)
+	inline void DSP::alu_extract(const bool abDst, const bool abSrc, const TWord widthOffset, const bool controlIsRegister)
 	{
-		const auto width = (widthOffset >> 12) & 0x3f;
-		const auto offset = widthOffset & 0x3f;
+		TWord width, offset;
+		saBitfieldControl(widthOffset, controlIsRegister, width, offset);
+		const TReg56& dSrc = abSrc ? reg.b : reg.a;
+		TReg56& dDst = abDst ? reg.b : reg.a;
+
+		if(isSixteenBitArithmetic())
+			dDst.var = saFrom40(saExtract40(dSrc, width, offset, true));
+		else if(!width)
+			dDst.var = 0;
+		else
+		{
+			const auto mask = TReg56::bitMask >> (56 - width);
+			auto field = (static_cast<uint64_t>(dSrc.var) >> (offset + g_aluShift)) & mask;
+			if(field & (uint64_t(1) << (width - 1)))
+				field |= TReg56::bitMask ^ mask;
+			dDst.var = static_cast<TInt64>(field << g_aluShift);
+		}
+
+		sr_clear(CCR_C);
+		sr_clear(CCR_V);
+		sr_z_update(dDst);
+		setCCRDirty(abDst, dDst, CCR_E | CCR_U | CCR_N);
+	}
+
+	inline void DSP::alu_extractu(bool abDst, bool abSrc, const TWord widthOffset, const bool controlIsRegister)
+	{
+		TWord width, offset;
+		saBitfieldControl(widthOffset, controlIsRegister, width, offset);
 
 		const TReg56& dSrc = abSrc ? reg.b : reg.a;
 		TReg56& dDst = abDst ? reg.b : reg.a;
-		const auto mask = 0xFFFFFFFFFFFFFF >> (56 - width);
-		dDst.var = static_cast<TInt64>(((static_cast<uint64_t>(dSrc.var) >> (offset + g_aluShift)) & mask) << g_aluShift);
+		if(isSixteenBitArithmetic())
+			dDst.var = saFrom40(saExtract40(dSrc, width, offset, false));
+		else if(!width)
+			dDst.var = 0;
+		else
+		{
+			const auto mask = TReg56::bitMask >> (56 - width);
+			dDst.var = static_cast<TInt64>(((static_cast<uint64_t>(dSrc.var) >> (offset + g_aluShift)) & mask) << g_aluShift);
+		}
 
 		sr_clear(CCR_C);
 		sr_clear(CCR_V);
@@ -917,7 +990,7 @@ namespace dsp56k
 		const bool abDst = getFieldValue<Extractu_S1S2, Field_D>(op);
 		const bool abSrc = getFieldValue<Extractu_S1S2, Field_s>(op);
 
-		alu_extractu(abDst, abSrc, widthOffset);
+		alu_extractu(abDst, abSrc, widthOffset, true);
 	}
 	inline void DSP::op_Extractu_CoS2(const TWord op)
 	{
@@ -926,7 +999,7 @@ namespace dsp56k
 		const bool abDst = getFieldValue<Extractu_CoS2, Field_D>(op);
 		const bool abSrc = getFieldValue<Extractu_CoS2, Field_s>(op);
 
-		alu_extractu(abDst, abSrc, width_offset);
+		alu_extractu(abDst, abSrc, width_offset, false);
 	}
 	inline void DSP::op_Inc(const TWord op)
 	{
@@ -947,23 +1020,49 @@ namespace dsp56k
 		setCCRDirty(ab, d, CCR_E | CCR_U | CCR_N);
 	}
 
-	inline void DSP::alu_insert(bool abDst, const TWord src, const TWord widthOffset)
+	// _packed: kind at 1-0, controlIsRegister at 2, D at 3, S at 4, qqq at 7-5, sss at 10-8.
+	// The control register and the insert source are read here rather than passed in, because the JIT
+	// has flushed its register pool before the call and this side holds the authoritative values.
+	void DSP::saBitfield(const TWord _control, const TWord _packed)
 	{
-		const auto width = (widthOffset >> 12) & 0x3f;
+		const auto controlIsRegister = ((_packed >> 2) & 1) != 0;
+		const bool abDst = ((_packed >> 3) & 1) != 0;
+		const bool abSrc = ((_packed >> 4) & 1) != 0;
+		const auto control = controlIsRegister ? decode_sss_read<TWord>((_packed >> 8) & 7) : _control;
 
-		// the offset is relative to the 56-bit value, so it moves up with the ALU
-		const uint64_t offset = (widthOffset & 0x3f) + g_aluShift;
+		switch(_packed & 3)
+		{
+		case 0:		alu_extract (abDst, abSrc, control, controlIsRegister);	break;
+		case 1:		alu_extractu(abDst, abSrc, control, controlIsRegister);	break;
+		default:	alu_insert  (abDst, decode_qqq_read((_packed >> 5) & 7).toWord(), control, controlIsRegister);	break;
+		}
+	}
 
-		const auto mask = (1<<width) - 1;
-
-		uint64_t s = src & mask;
-		s <<= offset;
+	inline void DSP::alu_insert(bool abDst, const TWord src, const TWord widthOffset, const bool controlIsRegister)
+	{
+		TWord widthField, offsetField;
+		saBitfieldControl(widthOffset, controlIsRegister, widthField, offsetField);
 
 		TReg56& dReg = abDst ? reg.b : reg.a;
-		auto& d = reinterpret_cast<uint64_t&>(dReg.var);
 
-		d &= ~(static_cast<uint64_t>(mask) << offset);
-		d |= s;
+		if(isSixteenBitArithmetic())
+		{
+			dReg.var = saFrom40(saInsert40(dReg, src, widthField, offsetField));
+		}
+		else
+		{
+			// the offset is relative to the 56-bit value, so it moves up with the ALU
+			const uint64_t offset = offsetField + g_aluShift;
+			const auto mask = widthField ? (uint64_t(1) << widthField) - 1 : 0;
+
+			uint64_t s = src & mask;
+			s <<= offset;
+
+			auto& d = reinterpret_cast<uint64_t&>(dReg.var);
+
+			d &= ~(static_cast<uint64_t>(mask) << offset);
+			d |= s;
+		}
 
 		sr_clear(CCR_C);
 		sr_clear(CCR_V);
@@ -980,7 +1079,7 @@ namespace dsp56k
 		const auto src = decode_qqq_read(qqq);
 		const auto co = decode_sss_read<TWord>(sss);
 
-		alu_insert(D, src.toWord(), co);
+		alu_insert(D, src.toWord(), co, true);
 	}
 	inline void DSP::op_Insert_CoS2(const TWord op)
 	{
@@ -989,7 +1088,7 @@ namespace dsp56k
 
 		const auto src = decode_qqq_read(qqq);
 
-		alu_insert(D, src.toWord(), fetchOpWordB());
+		alu_insert(D, src.toWord(), fetchOpWordB(), false);
 	}
 
 	inline void DSP::op_Lsl_D(const TWord op)
@@ -1125,7 +1224,46 @@ namespace dsp56k
 	}
 	inline void DSP::op_Merge(const TWord op)
 	{
-		errNotImplemented("MERGE");		
+		const auto D   = getFieldValue<Merge, Field_D>(op);
+		const auto sss = getFieldValue<Merge, Field_SSS>(op);
+
+		// {S[11-0],D[35-24]} -> D[47-24], a 24 bit operation that leaves the rest of D alone. The
+		// manual's Operation line says S[7-0], but that only supplies 20 of the 24 bits it then
+		// writes; the Description and the Sixteen-bit note (8 bits of S with 8 of D into a 16 bit
+		// field) both give the half-and-half shape, so S contributes 12.
+		const TReg56 d = getALU(D);
+		const uint64_t src = decode_sss_read<TWord>(sss);
+
+		TReg56 res(d);
+		uint64_t merged;
+
+		if(isSixteenBitArithmetic())
+		{
+			// Sixteen-bit Arithmetic mode halves everything: bits 15-8 of the source join bits 39-32 of
+			// the destination and the 16 bit result goes to bits 47-32. Writing an accumulator in SA
+			// mode also clears the least significant byte of each half - the manual warns about exactly
+			// this in section 3.4 note 2, and the reference simulator does it:
+			//   merge x1,a  x1=$abcdef a=$ff112233445566 -> $ffcd2200445500
+			merged = (((src >> 8) & 0xff) << 8) | ((d.var >> 32) & 0xff);
+			res.var = (d.var & ~(static_cast<uint64_t>(0xffff) << 32)) | (merged << 32);
+			res.var &= ~((static_cast<uint64_t>(0xff) << 24) | static_cast<uint64_t>(0xff));
+		}
+		else
+		{
+			merged = ((src & 0xfff) << 12) | ((d.var >> 24) & 0xfff);
+			res.var = (d.var & ~(static_cast<uint64_t>(0xffffff) << 24)) | (merged << 24);
+		}
+
+		setALU(D, res);
+
+		// N, Z and V only. E and U are unchanged, so any pending lazy CCR has to be resolved before
+		// N is written here - see alu_cmpu for the same reasoning.
+		updateDirtyCCR();
+
+		const auto msb = isSixteenBitArithmetic() ? 15 : 23;
+		sr_toggle( CCRB_N, Bit((merged >> msb) & 1) );	// bit 47 of the result
+		sr_toggle( CCR_Z, merged == 0 );
+		sr_clear ( CCR_V );								// "always cleared"
 	}
 	inline void DSP::op_Mpy_S1S2D(const TWord op)
 	{
@@ -1186,7 +1324,16 @@ namespace dsp56k
 	}
 	inline void DSP::op_Mpyri(const TWord op)
 	{
-		errNotImplemented("MPYRI");
+		// MPYRI is MPYI plus the rounding step, exactly as MPYR relates to MPY
+		const bool	ab		= getFieldValue<Mpyri,Field_d>(op);
+		const bool	negate	= getFieldValue<Mpyri,Field_k>(op);
+		const TWord	qq		= getFieldValue<Mpyri,Field_qq>(op);
+
+		const TReg24 s		= TReg24(immediateDataExt<Mpyri>());
+		const TReg24 reg	= decode_qq_read(qq);
+
+		alu_mpy( ab, reg, s, negate, false );
+		alu_rnd( ab );
 	}
 	inline void DSP::op_Neg(const TWord op)
 	{

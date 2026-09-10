@@ -30,12 +30,8 @@ namespace dsp56k
 			WritesSRbeforeRead	= 0x01,
 			ModeChange			= 0x02,
 			IsLoopBodyBegin		= 0x04,
-
-			// the loop this block begins was opened by DO FOREVER rather than by a counted
-			// DO. Such a loop has no count that can end it, so the block must not close its
-			// own back edge: it returns to the caller once per pass, which is what gives
-			// interrupts and peripherals a time slice.
-			IsForeverLoopBody	= 0x08,
+			IsLoopForever		= 0x08,	// the DO that opened this loop was a DO FOREVER
+			BranchAtLoopEnd		= 0x10,	// the loop's last instruction is an unconditional branch
 		};
 
 		auto hasFlag(const Flags _flag) const
@@ -63,6 +59,10 @@ namespace dsp56k
 			branchIsConditional = false;
 			loopBegin = g_invalidAddress;
 			loopEnd = g_invalidAddress;
+
+			ccrRead = 0;
+			ccrWrite = 0;
+			ccrOverwrite = 0;
 		}
 
 		TerminationReason terminationReason = TerminationReason::None;

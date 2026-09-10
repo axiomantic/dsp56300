@@ -8,6 +8,7 @@
 
 #include <iomanip>
 #include <cstring>
+#include <cstdio>
 
 #include "registers.h"
 #include "types.h"
@@ -18,6 +19,7 @@
 #include "dspconfig.h"
 #include "interrupts.h"
 #include "peripherals56311.h"
+#include "opcodecycles.h"
 
 #include "dsp_decode.inl"
 
@@ -264,7 +266,8 @@ namespace dsp56k
 				// 4.The Sixteen-bit Arithmetic (SA) mode bit is cleared.
 				// 5.The IPL is raised to disallow further interrupts of the same or lower levels.
 
-				sr_clear(static_cast<CCRMask>(SR_S1 | SR_S0 | SR_SA | SR_LF));
+				// the interrupt control cycle clears the loop flags too, FV as well as LF
+				sr_clear(static_cast<CCRMask>(SR_S1 | SR_S0 | SR_SA | SR_LF | SR_FV));
 
 				m_processingMode = LongInterrupt;
 				m_interruptFunc = &dspExecNop;
@@ -339,6 +342,9 @@ namespace dsp56k
 		if(pcCurrentInstruction == currentOp)
 		{
 			++m_instructions;
+
+			if constexpr(!g_useJIT)
+				m_cycles += getOpcodeCycles(currentOp);
 
 			if(g_traceSupported && pcCurrentInstruction == currentOp)
 				traceOp();
@@ -432,12 +438,13 @@ namespace dsp56k
 
 		auto& dsp = const_cast<DSP&>(*this);
 
+		const auto dirty = ccrCache.dirty;
 		dsp.ccrCache.dirty = 0;
-		
-//		dsp.sr_s_update();
-		dsp.sr_e_update(ccrCache.alu);
-		dsp.sr_u_update(ccrCache.alu);
-		dsp.sr_n_update(ccrCache.alu);
+
+//		if(dirty & CCR_S)	dsp.sr_s_update();
+		if(dirty & CCR_E)	dsp.sr_e_update(ccrCache.alu);
+		if(dirty & CCR_U)	dsp.sr_u_update(ccrCache.alu);
+		if(dirty & CCR_N)	dsp.sr_n_update(ccrCache.alu);
 	}
 
 	void DSP::sr_debug(char* _dst) const
@@ -528,6 +535,9 @@ namespace dsp56k
 		sr_set( SR_LF );
 		sr_toggle( SR_FV, _forever );
 
+		if constexpr(!g_useJIT)
+			m_cycles += getOpcodeCycles(pcCurrentInstruction);
+
 		++m_instructions;
 
 		traceOp();
@@ -569,12 +579,12 @@ namespace dsp56k
 	//
 	bool DSP::do_end()
 	{
-		// restore previous loop and forever flags. ENDDO and BRKcc are specified as
-		// SSL(LF,FV) -> SR, so FV travels with LF and a nested DO FOREVER cannot leave
-		// the flag standing over the loop that contained it.
-		const auto stackedSR = ssl().var;
-		sr_toggle( SR_LF, (stackedSR & SR_LF) != 0 );
-		sr_toggle( SR_FV, (stackedSR & SR_FV) != 0 );
+		// Restore the previous loop flags - BOTH of them. The manual's ENDDO operation line says
+		// SSL(LF) only, but the hardware restores the DO FOREVER flag as well: measured on the
+		// reference simulator, a stacked $018000 sets both and a stacked $000000 clears both, so it
+		// copies the two bits rather than or-ing them in. The JIT's do_end() always did this.
+		sr_toggle( SR_LF, (ssl().var & SR_LF) != 0 );
+		sr_toggle( SR_FV, (ssl().var & SR_FV) != 0 );
 
 		// decrement SP twice, restoring old loop settings
 		decSP();
@@ -592,11 +602,15 @@ namespace dsp56k
 		const auto lcBackup = reg.lc;
 		reg.lc.var = _loopCount;
 
+		if constexpr(!g_useJIT)
+			m_cycles += getOpcodeCycles(pcCurrentInstruction);
+
 		++m_instructions;
 
 		traceOp();
 
 		pcCurrentInstruction = reg.pc.var;
+		const auto repeatedOpPC = pcCurrentInstruction;
 		const auto op = fetchPC();
 
 		--reg.lc.var;
@@ -611,6 +625,8 @@ namespace dsp56k
 			--reg.lc.var;
 			(this->*func)(op);
 			++m_instructions;
+			if constexpr(!g_useJIT)
+				m_cycles += getOpcodeCycles(repeatedOpPC);
 //			traceOp();
 		}
 
@@ -1074,6 +1090,8 @@ namespace dsp56k
 	void DSP::notifyProgramMemWrite(TWord _offset)
 	{
 		m_opcodeCache[_offset].op = &DSP::op_ResolveCache;
+		if constexpr(!g_useJIT)
+			m_opcodeCycleCache[_offset] = 0;
 
 #if DSP56300_DEBUGGER
 		if(m_debugger)
@@ -1210,14 +1228,18 @@ namespace dsp56k
 	{
 		TReg56& d = ab ? reg.b : reg.a;
 
-		auto d64 = aluSignextend(d);
-		d64 = -d64;
-		
-		d.var = d64;
+		// The 56 bit minimum negates to itself, which is the only overflow NEG has; sim56300 gives
+		// sr=$00037a for a=$80000000000000 (V and the sticky L set) and leaves both clear for every
+		// other input. Unsigned arithmetic also defines that wraparound - negating the left-aligned
+		// minimum as a signed 64 bit value is UB, which is what this did.
+		constexpr auto minimum = static_cast<uint64_t>(1) << (55 + g_aluShift);
+		const auto value = static_cast<uint64_t>(d.var);
+
+		d.var = static_cast<TReg56::MyType>(static_cast<uint64_t>(0) - value);
 		aluMask(d);
 
 		sr_z_update(d);
-	//	TODO: how to update v? test in sim		sr_v_update(d);
+		sr_toggle(CCR_V, value == minimum);
 		sr_l_update_by_v();
 		setCCRDirty(ab, d, CCR_S | CCR_E | CCR_U | CCR_N);
 	}
@@ -1319,15 +1341,38 @@ namespace dsp56k
 			injectInterrupt(m_pendingExternalInterrupts.pop_front());
 	}
 
+	uint32_t DSP::calcOpcodeCycles(const TWord _pc) const
+	{
+		TWord opA;
+		TWord opB;
+		mem.getOpcode(_pc, opA, opB);
+		Instruction instA;
+		Instruction instB;
+		m_opcodes.getInstructionTypes(opA, instA, instB);
+		return dsp56k::calcCycles(instA, instB, _pc, opA, mem.getBridgedMemoryAddress(), 1);
+	}
+
+	uint8_t DSP::getOpcodeCycles(const TWord _pc)
+	{
+		auto& cachedCycles = m_opcodeCycleCache[_pc];
+		if(!cachedCycles)
+			cachedCycles = static_cast<uint8_t>(std::min<uint32_t>(255, std::max<uint32_t>(1, calcOpcodeCycles(_pc))));
+		return cachedCycles;
+	}
+
 	void DSP::clearOpcodeCache()
 	{
 		m_opcodeCache.clear();
 		m_opcodeCache.resize(mem.sizeP(), {&DSP::op_ResolveCache});
+		if constexpr(!g_useJIT)
+			m_opcodeCycleCache.assign(mem.sizeP(), 0);
 	}
 
 	void DSP::clearOpcodeCache(const TWord _address)
 	{
 		m_opcodeCache[_address].op = &DSP::op_ResolveCache;
+		if constexpr(!g_useJIT)
+			m_opcodeCycleCache[_address] = 0;
 		m_jit.notifyProgramMemWrite(_address);
 	}
 	
@@ -1413,6 +1458,10 @@ aar0=$000008 aar1=$000000 aar2=$000000 aar3=$000000
 		const auto str(ss.str());
 		LOG(str);
 
+		// LOG goes to the debugger on Windows, so say it on stderr regardless of build type.
+		fprintf(stderr, "*** DSP errNotImplemented: %s at PC $%06X\n", _opName, pcCurrentInstruction);
+		fflush(stderr);
+
 		// Assert::show directly rather than through assert(): that macro expands to
 		// nothing without _DEBUG, and a release build then continued past the
 		// unimplemented opcode indistinguishably from having executed it. Reaching one
@@ -1424,6 +1473,10 @@ aar0=$000008 aar1=$000000 aar2=$000000 aar3=$000000
 		// An unimplemented opcode has to be unsurvivable on every platform: a return
 		// here is indistinguishable to the caller from having executed the
 		// instruction.
+		//
+		// Upstream instead skips the opcode's full length and carries on. That recovery
+		// is unreachable once this throws, so it is not carried here: the fork wants the
+		// failure to stop the run rather than to be survived.
 		throw std::runtime_error("instruction not implemented, see console for details");
 	}
 

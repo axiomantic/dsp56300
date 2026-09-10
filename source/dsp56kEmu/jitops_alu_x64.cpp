@@ -15,12 +15,28 @@ namespace dsp56k
 	void JitOps::XY0to56(const JitReg64& _dst, int _xy) const
 	{
 		const auto src = m_block.dspRegPool().get(_xy ? PoolReg::DspY0 : PoolReg::DspX0, true, false);
-		signed24To56(_dst, r64(src));
+		if(m_block.getMode() && m_block.getMode()->testSR(SRB_SA))
+		{
+			m_asm.mov(_dst, r64(src));
+			m_asm.shl(_dst, asmjit::Imm(40));
+			m_asm.sar(_dst, asmjit::Imm(48));
+			m_asm.shl(_dst, asmjit::Imm(32 + g_aluBitOffset));
+		}
+		else
+			signed24To56(_dst, r64(src));
 	}
 	void JitOps::XY1to56(const JitReg64& _dst, int _xy) const
 	{
 		const auto src = m_block.dspRegPool().get(_xy ? PoolReg::DspY1 : PoolReg::DspX1, true, false);
-		signed24To56(_dst, r64(src));
+		if(m_block.getMode() && m_block.getMode()->testSR(SRB_SA))
+		{
+			m_asm.mov(_dst, r64(src));
+			m_asm.shl(_dst, asmjit::Imm(40));
+			m_asm.sar(_dst, asmjit::Imm(48));
+			m_asm.shl(_dst, asmjit::Imm(32 + g_aluBitOffset));
+		}
+		else
+			signed24To56(_dst, r64(src));
 	}
 
 	void JitOps::alu_abs(const JitRegGP& _r)
@@ -57,9 +73,9 @@ namespace dsp56k
 		ccr_clear(CCR_V);
 	}
 	
-	void JitOps::alu_asl(const TWord _abSrc, const TWord _abDst, const ShiftReg* _v, TWord _bits/* = 0*/)
+	void JitOps::alu_asl(const TWord _abSrc, const TWord _abDst, const ShiftReg* _v, TWord _bits/* = 0*/, const bool _updateCarry/* = true*/)
 	{
-		CcrBatchUpdate bu(*this, CCR_C, CCR_V);
+		CcrBatchUpdate bu(*this, _updateCarry ? static_cast<CCRMask>(CCR_C | CCR_V) : CCR_V);
 
 		AluRef alu(m_block, _abDst, _abDst == _abSrc, true);
 		if (_abDst != _abSrc)
@@ -77,7 +93,8 @@ namespace dsp56k
 		else
 			m_asm.sal(alu, asmjit::Imm(_bits));
 
-		ccr_update_ifCarry(CCRB_C);					// copy the host carry flag to the DSP carry flag
+		if(_updateCarry)
+			ccr_update_ifCarry(CCRB_C);					// copy the host carry flag to the DSP carry flag
 
 		// Overflow: Set if Bit 55 is changed any time during the shift operation, cleared otherwise.
 		// The easiest way to check this is to shift back and compare if the initial alu value is identical to the backshifted one
@@ -93,20 +110,20 @@ namespace dsp56k
 			m_asm.cmp(oldAlu, s);
 		}
 
-		ccr_update_ifNotZero(CCRB_V);
+		ccr_vl_update_ifNotZero();
 		
 		aluRestoreFrom64(alu);						// correction for the pre-shift, and keeps the low byte clear
 
 		ccr_dirty(_abDst, alu, static_cast<CCRMask>(CCR_E | CCR_N | CCR_U | CCR_Z));
 	}
 
-	void JitOps::alu_asr(const TWord _abSrc, const TWord _abDst, const ShiftReg* _v, TWord _immediate/* = 0*/)
+	void JitOps::alu_asr(const TWord _abSrc, const TWord _abDst, const ShiftReg* _v, TWord _immediate/* = 0*/, const bool _updateCarry/* = true*/)
 	{
 		AluRef alu(m_block, _abDst, _abDst == _abSrc, true);
 		if (_abDst != _abSrc)
 			m_dspRegs.getALU(alu, _abSrc);
 
-		CcrBatchUpdate bu(*this, CCR_C, CCR_V);
+		CcrBatchUpdate bu(*this, _updateCarry ? static_cast<CCRMask>(CCR_C | CCR_V) : CCR_V);
 
 		aluExtendTo64(alu);
 		if(_v)
@@ -118,7 +135,8 @@ namespace dsp56k
 		// for every ASR. aluExtendTo64 pre-shifted left by 8, so after shifting right by n the bit we
 		// want has landed on bit 7 whatever n was. Same thing AArch64 does, and it has to happen
 		// before the restore below, whose AND would clear the flag anyway.
-		copyBitToCCR(alu, 7, CCRB_C);
+		if(_updateCarry)
+			copyBitToCCR(alu, 7, CCRB_C);
 
 		// discards the bits shifted below the accumulator - the hardware has no resolution there
 		aluRestoreFrom64(alu);
@@ -326,11 +344,10 @@ namespace dsp56k
 	{
 		AluRef d(m_block, ab);
 
-		// const auto width = (widthOffset >> 12) & 0x3f;
 		const ShiftReg width(m_block);
-		_widthOffset.copyTo(width.get(), 24);
-		m_asm.shr(width, asmjit::Imm(12));
-		m_asm.and_(width, asmjit::Imm(0x3f));
+		const RegGP offset(m_block);
+		decodeBitfieldControl(_widthOffset, width.get(), offset.get());
+		_widthOffset.release();
 
 		// const auto mask = (1<<width) - 1;
 		const RegGP mask(m_block);
@@ -339,14 +356,13 @@ namespace dsp56k
 		m_asm.dec(mask);
 
 		// const uint64_t offset = widthOffset & 0x3f;
-		const auto& offset = width;
-		m_asm.mov(r32(offset), r32(_widthOffset.get()));
-		m_asm.and_(offset.get(), asmjit::Imm(0x3f));
-
 		// the offset is relative to the 56-bit value; shifting both the value and the mask by the
 		// aligned offset places the field correctly in either representation
 		if constexpr (g_leftAlignedAlu)
-			m_asm.add(offset.get(), asmjit::Imm(8));
+			m_asm.add(r32(offset), asmjit::Imm(8));
+
+		// x86 variable shift counts must live in cl: the width is consumed, reuse the ShiftReg for the offset
+		m_asm.mov(r32(width), r32(offset));
 
 		// uint64_t s = src & mask;
 		const RegGP s(m_block);
@@ -354,10 +370,10 @@ namespace dsp56k
 		m_asm.and_(r32(s), r32(mask));
 
 		// s <<= offset;
-		m_asm.shl(s.get(), offset.get().r8());
+		m_asm.shl(s.get(), width.get().r8());
 
 		// d &= ~(static_cast<uint64_t>(mask) << offset);
-		m_asm.shl(r64(mask), offset.get().r8());
+		m_asm.shl(r64(mask), width.get().r8());
 		m_asm.not_(r64(mask));
 		m_asm.and_(d.get(), mask);
 
@@ -799,8 +815,11 @@ namespace dsp56k
 		m_asm.shl(r32(prevCarry), asmjit::Imm(23));
 		m_asm.or_(r.get(), r32(prevCarry));						// inject old carry into bit 47 position
 
-		ccr_n_update_by23(r64(r));								// Set if bit 47 of the result is set
+		// Z first and from an explicit test: ccr_n_update_by23 emits a bit copy that clobbers the host
+		// flags, so reading ZF after it picked up whatever that left behind.
+		m_asm.test_(r32(r));
 		ccr_update_ifZero(CCRB_Z);								// Set if bits 47-24 of the result are 0
+		ccr_n_update_by23(r64(r));								// Set if bit 47 of the result is set
 		setALU1(D, r);
 
 		ccr_clear(CCR_V);										// This bit is always cleared
