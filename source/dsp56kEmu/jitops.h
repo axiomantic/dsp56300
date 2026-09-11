@@ -710,6 +710,10 @@ namespace dsp56k
 
 		void errNotImplemented(TWord op);
 
+		// A word the opcode table does not describe, as opposed to one it describes and this
+		// generator has no emitter for - which is errNotImplemented.
+		void errIllegalInstruction(TWord _pc, TWord op);
+
 		JitBlock& m_block;
 		JitBlockRuntimeData& m_blockRuntimeData;
 		const Opcodes& m_opcodes;
