@@ -52,10 +52,14 @@ namespace
 	static_assert(g_addrAlias < g_bridgedAddress, "the aliased address must be inside internal XY memory");
 
 	constexpr TWord g_markerAlias = 0x555555;
+	constexpr TWord g_markerAliasY = 0x333333;
 	constexpr TWord g_markerOutOfRange = 0xaaaaaa;
+	constexpr TWord g_markerOutOfRangeY = 0xcccccc;
 
-	// X:<aa> short absolute is a 6-bit field, so the observable lives below $40.
+	// X:<aa> short absolute is a 6-bit field, so the observables live below $40.
 	constexpr TWord g_addrRecorded = 0x3e;
+	constexpr TWord g_addrRecordedLongX = 0x3d;
+	constexpr TWord g_addrRecordedLongY = 0x3c;
 
 	struct Fixture
 	{
@@ -71,6 +75,42 @@ namespace
 			dsp.regs().sr.var |= (SR_I0 | SR_I1);
 		}
 	};
+
+	// The three words the guest records: the single-area read, and the two halves
+	// of the L: read that takes the parallel path.
+	struct Observed
+	{
+		TWord single = 0;
+		TWord longX = 0;
+		TWord longY = 0;
+
+		bool operator == (const Observed& _o) const
+		{
+			return single == _o.single && longX == _o.longX && longY == _o.longY;
+		}
+	};
+
+	Observed report(const Fixture& _f, const char* _engine)
+	{
+		Observed o;
+		o.single = _f.mem.get(MemArea_X, g_addrRecorded);
+		o.longX = _f.mem.get(MemArea_X, g_addrRecordedLongX);
+		o.longY = _f.mem.get(MemArea_X, g_addrRecordedLongY);
+
+		std::cout << _engine
+			<< ": x:$" << std::hex << g_addrOutOfRange << " read as $" << o.single
+			<< ", l:$" << g_addrOutOfRange << " read as $" << o.longX << ":$" << o.longY
+			<< ", alias x:$" << g_addrAlias << " holds $" << _f.mem.get(MemArea_X, g_addrAlias)
+			<< ", alias y:$" << g_addrAlias << " holds $" << _f.mem.get(MemArea_Y, g_addrAlias)
+			<< std::dec << std::endl;
+
+		// The out-of-range writes must not have disturbed the addresses that masking
+		// would have folded onto.
+		verify(_f.mem.get(MemArea_X, g_addrAlias) == g_markerAlias);
+		verify(_f.mem.get(MemArea_Y, g_addrAlias) == g_markerAliasY);
+
+		return o;
+	}
 
 	// Program words go through memWriteP, not Memory::set: the write path notifies
 	// the JIT, which sizes its entry table for the written range.
@@ -94,6 +134,8 @@ namespace
 	//   move x0,x:(r0)
 	//   move x:(r0),x0
 	//   move x0,x:$3e
+	//   ... the same again through L: memory, which reads X and Y from one
+	//   ... offset and so takes the parallel read path rather than the single one
 	//   nop                  <- halt lands here
 	struct Program
 	{
@@ -134,6 +176,19 @@ namespace
 			emit("move x0,x:(r0)");
 			emit("move x:(r0),x0");
 			emit("move x0,x:" + hex(g_addrRecorded));
+
+			// L: addresses X and Y from one offset, which is the parallel read path.
+			// Its two halves land in x1 (X) and x0 (Y).
+			emit("move #>" + hex(g_markerAliasY) + ",y0");
+			emit("move y0,y:(r1)");
+			emit("move #>" + hex(g_markerOutOfRangeY) + ",y0");
+			emit("move #>" + hex(g_markerOutOfRange) + ",x0");
+			emit("move x0,x:(r0)");
+			emit("move y0,y:(r0)");
+			emit("move l:(r0),x");
+			emit("move x1,x:" + hex(g_addrRecordedLongX));
+			emit("move x0,x:" + hex(g_addrRecordedLongY));
+
 			emit("nop");
 
 			end = base + static_cast<TWord>(program.size()) - 1;
@@ -142,39 +197,36 @@ namespace
 		}
 	};
 
-	TWord runInterpreter()
+	void seedObservables(Fixture& _f)
+	{
+		_f.mem.set(MemArea_X, g_addrRecorded, 0xffffff);
+		_f.mem.set(MemArea_X, g_addrRecordedLongX, 0xffffff);
+		_f.mem.set(MemArea_X, g_addrRecordedLongY, 0xffffff);
+	}
+
+	Observed runInterpreter()
 	{
 		Fixture f;
 		Program prog;
 		prog.write(f.dsp);
 
-		f.mem.set(MemArea_X, g_addrRecorded, 0xffffff);
+		seedObservables(f);
 		f.dsp.setPC(Program::base);
 
 		while(f.dsp.getPC().toWord() < prog.end)
 			f.dsp.execInterpreter();
 
-		const auto recorded = f.mem.get(MemArea_X, g_addrRecorded);
-
-		std::cout << "interpreter: x:$" << std::hex << g_addrOutOfRange << " read as $" << recorded
-			<< ", x:$" << g_addrAlias << " holds $" << f.mem.get(MemArea_X, g_addrAlias)
-			<< std::dec << std::endl;
-
-		// The out-of-range write must not have disturbed the address that masking
-		// would have folded onto.
-		verify(f.mem.get(MemArea_X, g_addrAlias) == g_markerAlias);
-
-		return recorded;
+		return report(f, "interpreter");
 	}
 
-	TWord runJit(bool& _ran)
+	Observed runJit(bool& _ran)
 	{
 		_ran = false;
 
 		if constexpr(!g_useJIT)
 		{
 			std::cout << "jit: not supported on this build, skipped" << std::endl;
-			return 0;
+			return {};
 		}
 		else
 		{
@@ -182,7 +234,7 @@ namespace
 			Program prog;
 			prog.write(f.dsp);
 
-			f.mem.set(MemArea_X, g_addrRecorded, 0xffffff);
+			seedObservables(f);
 			f.dsp.setPC(Program::base);
 
 			// One JIT block per exec(). The program is straight-line, so a handful of
@@ -199,16 +251,8 @@ namespace
 
 			verify(execCalls < maxExecCalls);
 
-			const auto recorded = f.mem.get(MemArea_X, g_addrRecorded);
-
-			std::cout << "jit: x:$" << std::hex << g_addrOutOfRange << " read as $" << recorded
-				<< ", x:$" << g_addrAlias << " holds $" << f.mem.get(MemArea_X, g_addrAlias)
-				<< std::dec << std::endl;
-
-			verify(f.mem.get(MemArea_X, g_addrAlias) == g_markerAlias);
-
 			_ran = true;
-			return recorded;
+			return report(f, "jit");
 		}
 	}
 
@@ -219,16 +263,23 @@ namespace
 		bool jitRan = false;
 		const auto jitted = runJit(jitRan);
 
-		verify(interpreted == 0);
+		verify(interpreted.single == 0);
+		verify(interpreted.longX == 0);
+		verify(interpreted.longY == 0);
 
 		if(!jitRan)
 			return;
 
-		// Not the in-range word the address would fold onto, and not the word the
+		// Not an in-range word the address would fold onto, and not a word an
 		// out-of-range write carried.
-		verify(jitted != g_markerAlias);
-		verify(jitted != g_markerOutOfRange);
-		verify(jitted == 0);
+		verify(jitted.single != g_markerAlias && jitted.single != g_markerOutOfRange);
+		verify(jitted.longX != g_markerAlias && jitted.longX != g_markerOutOfRange);
+		verify(jitted.longY != g_markerAliasY && jitted.longY != g_markerOutOfRangeY);
+
+		verify(jitted.single == 0);
+		verify(jitted.longX == 0);
+		verify(jitted.longY == 0);
+
 		verify(jitted == interpreted);
 	}
 }
