@@ -3,6 +3,10 @@
 #include "jitemitter.h"
 #include "jitblock.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include "jitblockinfo.h"
 #include "jitblockruntimedata.h"
 #include "jitops.h"
@@ -123,6 +127,27 @@ namespace dsp56k
 			Instruction instA, instB;
 
 			opcodes.getInstructionTypes(opA, instA, instB);
+
+			/*	No instruction on either operand means the word matched no entry in the opcode
+				table, so nothing below this line knows what it does: getRegisters and getFlags
+				both answer "nothing" for it, calcCycles has no entry to charge, and the emit loop
+				further down indexes g_opcodes with the instruction, where Invalid is -1.
+
+				Ending the run is the only outcome a caller cannot mistake for a translated block.
+				Terminating the block instead would emit a zero-length block whenever the
+				undecodable word is the first one, which moves the same non-advancing loop out of
+				analysis and into the generated code; carrying on past the word would compile a
+				block that computes something other than what the guest program holds, with no
+				indication that a word was dropped. The address is reported because the word alone
+				does not locate it - the same value can appear many times in one image.
+			*/
+			if(instA == Invalid && instB == Invalid)
+			{
+				LOG("FATAL: undecodable instruction word $" << HEX(opA) << " at P:$" << HEX(pc));
+				Assert::show("undecodable instruction word, see console for details", __func__, __LINE__);
+				// Assert::show logs and throws on most platforms, but on Windows it returns.
+				throw std::runtime_error("undecodable instruction word, see console for details");
+			}
 
 			auto written = RegisterMask::None;
 			auto read = RegisterMask::None;

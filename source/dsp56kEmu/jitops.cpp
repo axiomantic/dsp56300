@@ -296,10 +296,7 @@ namespace dsp56k
 			const auto* oi = m_opcodes.findNonParallelOpcodeInfo(_op);
 
 			if(!oi)
-			{
-				m_opcodes.findNonParallelOpcodeInfo(_op);		// retry here to help debugging
-				assert(0 && "illegal instruction");
-			}
+				errIllegalInstruction(_pc, _op);
 
 			emit(oi->m_instruction, _op);
 			return;
@@ -307,10 +304,7 @@ namespace dsp56k
 
 		const auto* oiMove = m_opcodes.findParallelMoveOpcodeInfo(_op);
 		if(!oiMove)
-		{
-			m_opcodes.findParallelMoveOpcodeInfo(_op);		// retry here to help debugging
-			assert(0 && "illegal instruction");
-		}
+			errIllegalInstruction(_pc, _op);
 
 		const OpcodeInfo* oiAlu = nullptr;
 
@@ -319,8 +313,21 @@ namespace dsp56k
 			oiAlu = m_opcodes.findParallelAluOpcodeInfo(_op);
 			if(!oiAlu)
 			{
-				m_opcodes.findParallelAluOpcodeInfo(_op);	// retry here to help debugging
-				assert(0 && "invalid instruction");						
+				/*	Unlike the two cases above, this one does not dereference what it failed to
+					find: every use of oiAlu below is guarded, so the block still generates and
+					performs the parallel move while dropping the ALU operation. That makes it a
+					wrong answer rather than a crash, and a wrong answer that a release build did
+					not report at all, because the assert here expanded to nothing.
+
+					It is reported and NOT raised. Raising it would turn every such word into a
+					fatal error, and unlike an undescribed word these words do generate a block
+					that runs today - firmware that currently executes one would stop working. What
+					the dropped ALU operation should be is a separate question from making the
+					block walk terminate, so this only ensures the answer is not silent.
+				*/
+				fprintf(stderr, "*** JIT: no ALU operation matches $%06X at P:$%06X,"
+					" emitting the parallel move alone\n", _op, _pc);
+				fflush(stderr);
 			}
 		}
 
@@ -452,6 +459,26 @@ namespace dsp56k
 		// carried here: the fork wants the failure to stop the run rather than to be
 		// survived.
 		throw std::runtime_error("instruction not implemented");
+	}
+
+	void JitOps::errIllegalInstruction(const TWord _pc, const TWord op)
+	{
+		// The address as well as the word: the same undescribed word occurs at many addresses in
+		// one image, so the word alone does not say which block failed to generate.
+		fprintf(stderr, "*** JIT errIllegalInstruction: opcode=$%06X at P:$%06X\n", op, _pc);
+		fflush(stderr);
+
+		/*	Both callers used to be a bare assert(), which expands to nothing without _DEBUG, and
+			each then dereferenced the null OpcodeInfo it had just failed to find. A release build
+			therefore turned an undescribed word into a null read with no message - a crash that
+			says nothing about which word or which address caused it. Raising it here keeps the
+			same outcome (the run ends) while making it diagnosable from a log.
+		*/
+		Assert::show("illegal instruction", __func__, __LINE__);
+
+		// Assert::show logs and throws on most platforms, but on Windows it returns. Returning to
+		// either caller lands on the null dereference this replaces.
+		throw std::runtime_error("illegal instruction");
 	}
 
 	/*	Open a loop. Shared by DO and DO FOREVER, which differ in exactly two ways: FOREVER does not
