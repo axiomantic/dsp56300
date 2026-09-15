@@ -95,6 +95,7 @@ namespace dsp56k
 		void occupyArea(JitBlockRuntimeData* _block);
 		void unoccupyArea(const JitBlockRuntimeData* _block);
 
+		bool evictBlocksUnderInstruction(TWord _pc);
 		bool isBeingGeneratedRecursive(const JitBlockRuntimeData* _block) const;
 		bool isBeingGenerated(const JitBlockRuntimeData* _block) const;
 

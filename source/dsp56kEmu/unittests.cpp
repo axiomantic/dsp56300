@@ -6951,6 +6951,7 @@ namespace dsp56k
 		bitTestMemoryEaUpdate();
 		subr_leftAligned();
 		ccrCrossBlockConsumer();
+		extensionWordOverExistingBlock();
 	}
 
 	void UnitTests::rep_div_powerOfTwo()
@@ -8011,6 +8012,66 @@ namespace dsp56k
 	// addresses across cases makes the outcome depend on whatever a previous test left cached -
 	// the result then varies with test placement. Destroy all blocks up front AND give every case
 	// its own P addresses, so the test is deterministic wherever it runs.
+	/*	One P word can be two things: the extension word of a two-word instruction, and the first
+		opcode of a block that something jumps to. A block that takes the word as an extension must
+		not leave the block starting there alive behind it. The entry table has one slot per
+		address, so the survivor drops out of it, a later write to the word no longer finds it, and
+		a parent that jumps straight into its code keeps running the word as it was.
+	*/
+	void UnitTests::extensionWordOverExistingBlock()
+	{
+		constexpr TWord rtsOpcode = 0x00000c;
+		constexpr TWord aNonZero = 0x00000001000000;
+
+		// _leadingNop puts the two-word instruction second in its block instead of first
+		auto run = [&](const TWord _base, const bool _leadingNop)
+		{
+			const auto wordAddr = _base + 5;
+			const auto instructionAddr = wordAddr - 1;
+
+			dsp.resetHW();
+
+			// the word as an opcode, entered from a block that links to it
+			TWord pc = _base;
+			pc = emitToMemory(0x0d0000 | wordAddr, 0, pc);				// jsr wordAddr
+			auto returnPC = pc;
+			emitToMemory("nop", pc);
+			emitToMemory(rtsOpcode, 0, wordAddr);
+
+			dsp.setPC(_base);
+			execUntil(returnPC);
+
+			// the same word, unchanged, as the immediate data of the instruction in front of it
+			const auto callee = _leadingNop ? instructionAddr - 1 : instructionAddr;
+
+			pc = _base + 0x10;
+			pc = emitToMemory(0x0d0000 | callee, 0, pc);				// jsr callee
+			returnPC = pc;
+			emitToMemory("nop", pc);
+			if(_leadingNop)
+				emitToMemory("nop", callee);
+			emitToMemory("move #>$00000c,x0", instructionAddr);
+			emitToMemory("rts", wordAddr + 1);
+
+			dsp.setPC(_base + 0x10);
+			execUntil(returnPC);
+
+			verify(dsp.x0().var == rtsOpcode);
+
+			// the call at _base has to run what the word holds now
+			emitToMemory("clr a", wordAddr);
+
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(aNonZero)));
+			dsp.setPC(_base);
+			execUntil(_base + 1);
+
+			verify(dsp.aluA().var == 0);
+		};
+
+		run(0x600, false);
+		run(0x640, true);
+	}
+
 	void UnitTests::ccrCrossBlockConsumer()
 	{
 		TWord baseA = 0x400, baseB = 0x900;
