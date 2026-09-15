@@ -21,7 +21,8 @@ namespace dsp56k
 			LoopEnd,
 			InstructionLimit,
 			ModeChange,
-			WaitInstruction
+			WaitInstruction,
+			IllegalInstruction
 		};
 
 		enum class Flags
@@ -32,6 +33,7 @@ namespace dsp56k
 			IsLoopBodyBegin		= 0x04,
 			IsLoopForever		= 0x08,	// the DO that opened this loop was a DO FOREVER
 			BranchAtLoopEnd		= 0x10,	// the loop's last instruction is an unconditional branch
+			RaisesIllegalInstruction = 0x20,	// holds ILLEGAL or an undefined word
 		};
 
 		auto hasFlag(const Flags _flag) const
