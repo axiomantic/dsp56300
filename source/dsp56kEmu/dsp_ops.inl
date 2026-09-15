@@ -350,14 +350,18 @@ namespace dsp56k
 	{
 		/*	DSP56300 Family Manual Rev. 5: ILLEGAL "executes as if it were a NOP instruction" and then
 			starts illegal instruction exception processing, and 2.3.2.2 gives any undefined operation
-			code the same Illegal Instruction Interrupt. It is IPL 3, which no mask level blocks, so
-			queueing it here is enough for it to be serviced before the next instruction.
+			code the same Illegal Instruction Interrupt, "serviced immediately after the illegal
+			instruction executes". It is IPL 3, which no mask level blocks and which interrupts a long
+			interrupt routine. A fast interrupt routine is not interruptible, so a raise inside one is
+			serviced by execInterrupt once the routine ends.
 		*/
 		if(m_illegalInstructionPending)
 			return;
 
 		m_illegalInstructionPending = true;
-		injectInterrupt(Vba_Illegalinstruction);
+
+		if(m_processingMode != FastInterrupt)
+			scheduleIllegalInstructionInterrupt();
 	}
 
 	inline void DSP::op_Lra_Rn(const TWord op)
