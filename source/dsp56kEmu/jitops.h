@@ -53,7 +53,7 @@ namespace dsp56k
 		uint32_t calcCycles(TWord _pc) const;
 
 		void op_Abs(TWord op);
-		void op_ADC(TWord op)			{ errNotImplemented(op); }
+		void op_ADC(TWord op);
 		void op_Add_SD(TWord op);
 		void op_Add_xx(TWord op);
 		void op_Add_xxxx(TWord op);
@@ -268,7 +268,7 @@ namespace dsp56k
 		void op_Ror(TWord op);
 		void op_Rti(TWord op);
 		void op_Rts(TWord op);
-		void op_Sbc(TWord op)					{ errNotImplemented(op); }
+		void op_Sbc(TWord op);
 		void op_Stop(TWord op);
 		void op_Sub_SD(TWord op);
 		void op_Sub_xx(TWord op);
@@ -536,9 +536,18 @@ namespace dsp56k
 		// V is overwritten while L is a sticky OR of V, so where both are written together they can be
 		// produced from a single 0/1 value instead of two independent read-modify-writes of SR.
 		void ccr_vl_update_ifNotZero();
+		void ccr_vl_update(const JitRegGP& _zeroOrOne);
+		void ccr_vl_update_ifEqual(const JitRegGP& _value, uint64_t _limit);
 #ifndef HAVE_ARM64
 		void ccr_vl_update_ifNotParity();
 		void ccr_vl_update(asmjit::x86::CondCode _cc);
+		// Inside a CcrBatchUpdate that cleared C and V: C from the host carry, V and the sticky L from the host overflow.
+		// Overflow is rare, so V and L are set out of line behind a branch that is normally not taken.
+		void ccr_c_update_vl_ifOverflow();
+#else
+		// Inside a CcrBatchUpdate that cleared V: V and the sticky L from the host overflow, set out of line behind a
+		// branch that is normally not taken.
+		void ccr_vl_update_ifOverflow();
 #endif
 		void ccr_v_update(const JitReg64& _nonMaskedResult);
 
@@ -608,6 +617,8 @@ namespace dsp56k
 
 		void alu_sub(TWord _ab, const JitReg64& _v);
 		void alu_sub(TWord _ab, uint8_t _v);
+
+		void alu_adcSbc(TWord _ab, TWord _j, bool _subtract);
 
 		void alu_and(TWord ab, DspValue& _v);
 
