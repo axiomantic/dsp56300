@@ -295,10 +295,9 @@ namespace dsp56k
 		{
 			const auto* oi = m_opcodes.findNonParallelOpcodeInfo(_op);
 
-			if(!oi)
-				errIllegalInstruction(_pc, _op);
-
-			emit(oi->m_instruction, _op);
+			// An undefined operation code raises the same interrupt as ILLEGAL, and JitBlock::getInfo
+			// has already sized and classified the word as one.
+			emit(oi ? oi->m_instruction : Illegal, _op);
 			return;
 		}
 
@@ -468,16 +467,14 @@ namespace dsp56k
 		fprintf(stderr, "*** JIT errIllegalInstruction: opcode=$%06X at P:$%06X\n", op, _pc);
 		fflush(stderr);
 
-		/*	Both callers used to be a bare assert(), which expands to nothing without _DEBUG, and
-			each then dereferenced the null OpcodeInfo it had just failed to find. A release build
-			therefore turned an undescribed word into a null read with no message - a crash that
-			says nothing about which word or which address caused it. Raising it here keeps the
-			same outcome (the run ends) while making it diagnosable from a log.
+		/*	A bare assert() expands to nothing without _DEBUG, and the caller would then dereference
+			the null OpcodeInfo it failed to find: a crash that says nothing about which word or which
+			address caused it. Raising here ends the run with both in the log.
 		*/
 		Assert::show("illegal instruction", __func__, __LINE__);
 
 		// Assert::show logs and throws on most platforms, but on Windows it returns. Returning to
-		// either caller lands on the null dereference this replaces.
+		// the caller lands on the null dereference this replaces.
 		throw std::runtime_error("illegal instruction");
 	}
 
@@ -680,6 +677,11 @@ namespace dsp56k
 		_dsp->op_Wait(op);
 	}
 
+	void callDSPIllegal(DSP* const _dsp, const TWord op)
+	{
+		_dsp->op_Illegal(op);
+	}
+
 	void JitOps::op_Debug(TWord op)
 	{
 		// make sure that the debugger sees all latest register values correctly
@@ -694,6 +696,11 @@ namespace dsp56k
 		{
 			op_Debug(op);
 		}, false);
+	}
+
+	void JitOps::op_Illegal(TWord op)
+	{
+		callDSPFunc(&callDSPIllegal, op);
 	}
 
 	void JitOps::op_Wait(TWord op)

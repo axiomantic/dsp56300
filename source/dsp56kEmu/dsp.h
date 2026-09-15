@@ -123,6 +123,10 @@ namespace dsp56k
 
 		std::vector<std::function<void()>>			m_customInterrupts;
 
+		// An interrupt source has at most one interrupt pending at a time (DSP56300 Family Manual
+		// Rev. 5, 2.3.2, step 1), so a second undefined word before the first is serviced adds nothing.
+		bool										m_illegalInstructionPending = false;
+
 		Opcodes							m_opcodes;
 
 		struct OpcodeCacheEntry

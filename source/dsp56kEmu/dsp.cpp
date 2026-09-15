@@ -193,6 +193,9 @@ namespace dsp56k
 		if(isInterruptMasked(vba))
 			return;
 
+		if(vba == Vba_Illegalinstruction)
+			m_illegalInstructionPending = false;
+
 		// it is important that the processing mode is switched first before popping the vector to prevent a possible race condition in hasPendingInterrupt()
 		{
 			m_processingMode = FastInterrupt;

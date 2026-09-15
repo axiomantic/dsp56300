@@ -24,7 +24,8 @@
 //
 //   anUndecodableWordTerminatesTheBlockWalk -- the walk. Before the fix this call does not
 //   return; the test binary is registered with a CTest TIMEOUT, which is what turns a stall
-//   into a red rather than into a run that is still going.
+//   into a red rather than into a run that is still going. The walk takes the word as ILLEGAL,
+//   one word long, and ends the block after it, so the case pins that block.
 //
 //   ordinaryCodeStillProducesTheSameBlock -- the known positive for the walk. A block over
 //   decodable code has to come out byte for byte as it did, so this pins its termination
@@ -32,6 +33,7 @@
 //
 // HOW IT FAILS. Without the fix, anUndecodableWordTerminatesTheBlockWalk spins until CTest's
 // TIMEOUT kills it, and theLengthOfAnUndecodableWordIsNotZero fails outright with 0 != 1.
+// What executing the word does is dsp56k_undefined_word_illegal_interrupt's subject.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/jit.h"
@@ -43,6 +45,8 @@
 #include "dsp56kEmu/unittests.h"
 
 #include <iostream>
+#include <map>
+#include <set>
 #include <vector>
 
 namespace
@@ -54,8 +58,7 @@ namespace
 	constexpr TWord g_base = 0x100;
 
 	/*	$000040 is the word this was found on: six of them sit inside one generated routine of a
-		Nord Modular G2 DSP image. It is used here only because it decodes to nothing -- this test
-		makes no claim about what it means on silicon, and asserts nothing about what it does.
+		Nord Modular G2 DSP image. It is used here only because it decodes to nothing.
 	*/
 	constexpr TWord g_undecodable = 0x000040;
 
@@ -151,31 +154,30 @@ namespace
 
 			verify(f.dsp.getJit().getConfig().maxInstructionsPerBlock == 0);
 
-			bool reported = false;
-
-			try
-			{
-				f.dsp.getJit().create(g_base, false);
-			}
-			catch(const std::string& _err)
-			{
-				reported = true;
-				std::cout << "reported: " << _err << std::endl;
-			}
-			catch(const std::exception& _err)
-			{
-				reported = true;
-				std::cout << "reported: " << _err.what() << std::endl;
-			}
-
-			// Returning from create at all is half the measurement: without the fix this line is
-			// unreachable, because the walk inside it never advances past the word.
+			// Without the fix this call does not return, because the walk inside it never advances
+			// past the word.
+			f.dsp.getJit().create(g_base, false);
 			std::cout << "create returned" << std::endl;
 
-			// The other half. An undecodable word cannot be translated, and a block that silently
-			// omitted it would compute something other than what P memory holds, so ending the run
-			// is the outcome. A quiet return here would mean the word was skipped.
-			verify(reported);
+			JitBlockInfo info;
+			const MmuArray<JitCacheEntry> cache;
+			const std::set<TWord> volatileP;
+			const std::map<TWord, TWord> loopStarts;
+			const std::set<TWord> loopEnds;
+			const JitConfig config;
+
+			JitBlock::getInfo(info, f.dsp, g_base, config, cache, volatileP, loopStarts, loopEnds);
+
+			std::cout << "block at $" << std::hex << g_base << std::dec
+				<< ": memSize=" << info.memSize
+				<< " instructionCount=" << info.instructionCount
+				<< " terminationReason=" << static_cast<int>(info.terminationReason) << std::endl;
+
+			// The move and the word, and not the jmp: the block stops on the word rather than
+			// carrying on past it, and the word occupies exactly one address.
+			verify(info.terminationReason == JitBlockInfo::TerminationReason::IllegalInstruction);
+			verify(info.memSize == 3);
+			verify(info.instructionCount == 2);
 		}
 	}
 
