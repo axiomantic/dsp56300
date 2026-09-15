@@ -15,6 +15,35 @@
 
 namespace dsp56k
 {
+	namespace
+	{
+		void throwIfUndecodable(const TWord _pc, const TWord _op, const Instruction _instA, const Instruction _instB)
+		{
+			/*	No instruction on either operand means the word matched no entry in the opcode
+				table, so nothing in block analysis knows what it does: getRegisters and getFlags
+				both answer "nothing" for it, calcCycles has no entry to charge, and the emit loop
+				indexes g_opcodes with the instruction, where Invalid is -1. That holds as much for
+				the instruction a REP repeats, which is emitted together with the REP, as for any
+				other word the walk reads.
+
+				Ending the run is the only outcome a caller cannot mistake for a translated block.
+				Terminating the block instead would emit a zero-length block whenever the
+				undecodable word is the first one, which moves the same non-advancing loop out of
+				analysis and into the generated code; carrying on past the word would compile a
+				block that computes something other than what the guest program holds, with no
+				indication that a word was dropped. The address is reported because the word alone
+				does not locate it - the same value can appear many times in one image.
+			*/
+			if(_instA == Invalid && _instB == Invalid)
+			{
+				LOG("FATAL: undecodable instruction word $" << HEX(_op) << " at P:$" << HEX(_pc));
+				Assert::show("undecodable instruction word, see console for details", __func__, __LINE__);
+				// Assert::show logs and throws on most platforms, but on Windows it returns.
+				throw std::runtime_error("undecodable instruction word, see console for details");
+			}
+		}
+	}
+
 	JitBlock::JitBlock(JitEmitter& _a, DSP& _dsp, JitRuntimeData& _runtimeData, JitConfig&& _config)
 	: m_runtimeData(_runtimeData)
 	, m_asm(_a)
@@ -128,36 +157,48 @@ namespace dsp56k
 
 			opcodes.getInstructionTypes(opA, instA, instB);
 
-			/*	No instruction on either operand means the word matched no entry in the opcode
-				table, so nothing below this line knows what it does: getRegisters and getFlags
-				both answer "nothing" for it, calcCycles has no entry to charge, and the emit loop
-				further down indexes g_opcodes with the instruction, where Invalid is -1.
+			throwIfUndecodable(pc, opA, instA, instB);
 
-				Ending the run is the only outcome a caller cannot mistake for a translated block.
-				Terminating the block instead would emit a zero-length block whenever the
-				undecodable word is the first one, which moves the same non-advancing loop out of
-				analysis and into the generated code; carrying on past the word would compile a
-				block that computes something other than what the guest program holds, with no
-				indication that a word was dropped. The address is reported because the word alone
-				does not locate it - the same value can appear many times in one image.
-			*/
-			if(instA == Invalid && instB == Invalid)
-			{
-				LOG("FATAL: undecodable instruction word $" << HEX(opA) << " at P:$" << HEX(pc));
-				Assert::show("undecodable instruction word, see console for details", __func__, __LINE__);
-				// Assert::show logs and throws on most platforms, but on Windows it returns.
-				throw std::runtime_error("undecodable instruction word, see console for details");
-			}
+			const auto flags = Opcodes::getFlags(instA, instB);
 
 			auto written = RegisterMask::None;
 			auto read = RegisterMask::None;
 
 			Opcodes::getRegisters(written, read, opA, instA, instB);
 
+			/*	JitOps::rep_exec emits the repeated instruction as part of the REP and continues after both,
+				so the two have to be scanned as one. Scanned separately, anything that ends a block between
+				them - code that already exists at the repeated instruction, a volatile P address, a loop end -
+				leaves the block one word short: it runs the REP with its instruction and then continues AT
+				the repeated instruction, which runs a second time.
+			*/
+			TWord repeatedLength = 0;
+			TWord repeatedCycles = 0;
+
+			if(flags & (OpFlagRepDynamic | OpFlagRepImmediate))
+			{
+				const auto pcRepeated = pc + Opcodes::getOpcodeLength(opA, instA, instB);
+
+				TWord repA, repB;
+				_dsp.memory().getOpcode(pcRepeated, repA, repB);
+
+				Instruction repInstA, repInstB;
+				opcodes.getInstructionTypes(repA, repInstA, repInstB);
+				throwIfUndecodable(pcRepeated, repA, repInstA, repInstB);
+
+				auto repWritten = RegisterMask::None;
+				auto repRead = RegisterMask::None;
+				Opcodes::getRegisters(repWritten, repRead, repA, repInstA, repInstB);
+
+				written |= repWritten;
+				read |= repRead;
+
+				repeatedLength = Opcodes::getOpcodeLength(repA, repInstA, repInstB);
+				repeatedCycles = calcCycles(repInstA, repInstB, pcRepeated, repA, _dsp.memory().getBridgedMemoryAddress(), 1);
+			}
+
 			const auto writtenM = (written & RegisterMask::M);
 			const auto readM = read & RegisterMask::M;
-
-			const auto flags = Opcodes::getFlags(instA, instB);
 
 			// a jsr in a fast interrupt modifies the MR because it disables scaling mode bits, loop flag and sixteen-bit arithmetic mode
 			if(isFastInterrupt && (written & RegisterMask::SSL) != RegisterMask::None)
@@ -193,7 +234,7 @@ namespace dsp56k
 
 			// for a volatile P address, if you have some code, break now. if not, generate this one op, and then return.
 			if (_volatileP.find(pc) != _volatileP.end() || 
-				(_volatileP.find(pc+1) != _volatileP.end() && Opcodes::getOpcodeLength(opA, instA, instB) == 2))
+				(_volatileP.find(pc+1) != _volatileP.end() && (Opcodes::getOpcodeLength(opA, instA, instB) == 2 || repeatedLength)))
 			{
 				terminationReason = JitBlockInfo::TerminationReason::VolatileP;
 				if (numInstructions)
@@ -218,6 +259,13 @@ namespace dsp56k
 			numWords += Opcodes::getOpcodeLength(opA, instA, instB);
 			++numInstructions;
 			numCycles += calcCycles(instA, instB, pc, opA, _dsp.memory().getBridgedMemoryAddress(), 1);
+
+			if(repeatedLength)
+			{
+				numWords += repeatedLength;
+				++numInstructions;
+				numCycles += repeatedCycles;
+			}
 
 			if(getLoopEndAddr(_info.loopEnd, instA, pc, opB))
 				_info.loopBegin = pc;
@@ -336,6 +384,7 @@ namespace dsp56k
 		auto& childAddr = _rt.m_child;
 
 		m_chain = _chain;
+		m_coldCode.clear();
 
 		const bool isFastInterrupt = _pc < Vba_End;
 		const auto fastInterruptMode = isFastInterrupt ? (m_config.dynamicFastInterrupts ? JitOps::FastInterruptMode::Dynamic : JitOps::FastInterruptMode::Static) : JitOps::FastInterruptMode::None;
@@ -896,6 +945,9 @@ namespace dsp56k
 
 		profileEnd(lj);
 
+		// every path above ends in an unconditional exit, so nothing falls into the out-of-line code
+		emitColdCode();
+
 		m_currentJitBlockRuntimeData = nullptr;
 		return true;
 	}
@@ -981,6 +1033,14 @@ namespace dsp56k
 		m_dspRegPool.reset();
 		m_scratchLocked = false;
 		m_shiftLocked = false;
+		m_coldCode.clear();
+	}
+
+	void JitBlock::emitColdCode()
+	{
+		for(const auto& code : m_coldCode)
+			code();
+		m_coldCode.clear();
 	}
 
 	JitBlock::JitBlockGenerating::JitBlockGenerating(JitBlockRuntimeData& _block): m_block(_block)

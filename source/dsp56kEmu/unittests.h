@@ -206,6 +206,9 @@ namespace  dsp56k
 		void enableDynamicFastInterrupts(bool _enable);
 		void callAtVectorAddress();
 		void callAfterRepAtVectorAddress();
+		void repAtVolatileAddress();
+		void repTwoWordInstruction();
+		void adcSbcCarryChain();
 		void conditionalCallAtVectorAddress();
 		void callInsideLoopAtVectorAddress();
 		void do_callAtLoopEnd();
