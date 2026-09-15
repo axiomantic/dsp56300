@@ -616,6 +616,10 @@ namespace dsp56k
 		--reg.lc.var;
 		execOp(op);
 
+		// A two-word instruction moves PC past its extension word every time it runs, but it is fetched only
+		// once. sim56300 continues behind the first pass, however often it repeats.
+		const auto pcNext = reg.pc;
+
 		const auto& opCache = m_opcodeCache[pcCurrentInstruction];
 
 		const auto& func = opCache.op;
@@ -630,6 +634,7 @@ namespace dsp56k
 //			traceOp();
 		}
 
+		reg.pc = pcNext;
 		reg.lc = lcBackup;
 
 		return true;
@@ -1196,16 +1201,20 @@ namespace dsp56k
 	{
 		TReg56& d = ab ? reg.b : reg.a;
 
-		TInt64 d64 = aluSignextend(d);
+		const TInt64 d64 = aluSignextend(d);
 
-		d64 = d64 < 0 ? -d64 : d64;
+		// Negate unsigned: the minimum has no positive counterpart and negating it as a signed value is UB. It stays
+		// the minimum, which is also ABS's only overflow: sim56300 gives sr=$00037a for a=$80000000000000.
+		const auto magnitude = d64 < 0 ? static_cast<uint64_t>(0) - static_cast<uint64_t>(d64) : static_cast<uint64_t>(d64);
 
-		d.var = d64;
+		d.var = static_cast<TReg56::MyType>(magnitude);
 		aluMask(d);
 
+		constexpr auto minimum = static_cast<uint64_t>(1) << (55 + g_aluShift);
+
 		sr_z_update(d);
-	//	sr_v_update(d);
-	//	sr_l_update_by_v();
+		sr_toggle(CCR_V, static_cast<uint64_t>(d.var) == minimum);
+		sr_l_update_by_v();
 		setCCRDirty(ab, d, CCR_S | CCR_E | CCR_U | CCR_N);
 	}
 

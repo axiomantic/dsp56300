@@ -84,6 +84,12 @@ namespace dsp56k
 
 				o.updateDirtyCCR();
 				pusher.end();
+
+				// out-of-line code for rare paths, which a real block emits after its exit: jump over it here
+				const auto afterColdCode = emitter.newLabel();
+				emitter.jmp(afterColdCode);
+				b.emitColdCode();
+				emitter.bind(afterColdCode);
 			}
 
 			emitter.ret();
@@ -134,6 +140,12 @@ namespace dsp56k
 
 				o.updateDirtyCCR();
 				pusher.end();
+
+				// out-of-line code for rare paths, which a real block emits after its exit: jump over it here
+				const auto afterColdCode = emitter.newLabel();
+				emitter.jmp(afterColdCode);
+				b.emitColdCode();
+				emitter.bind(afterColdCode);
 			}
 
 			emitter.ret();
