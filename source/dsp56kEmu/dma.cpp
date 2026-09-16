@@ -690,7 +690,35 @@ namespace dsp56k
 
 		if (agmS == AddressGenMode::SingleCounterApostInc && agmD == AddressGenMode::SingleCounterApostInc)
 		{
-			assert(!isRequestTrigger() && "not supported yet, needs to be transfer one word at a time");
+			const auto tm = getTransferMode();
+
+			// A word transfer moves one word per request (DSP56300FM Table 10-5, DTM 001 and 101),
+			// counted down as Counter Mode A describes (section 10.5.3.1).
+			//
+			// A line transfer (DTM 010) moves one word per request here as well, which hardware does
+			// not define: Table 10-5 gives a line transfer a line, and DCOL is the only thing that
+			// gives a line a length. Table 10-6 selects Counter Mode A for post-increment on both
+			// sides, and Mode A is a single undivided DCO with no DCOL. The two neighbouring
+			// single-counter cases below move one word per request, so follow them rather than copy
+			// the whole count on one request.
+			if(tm == TransferMode::WordTriggerRequestClearDE || tm == TransferMode::WordTriggerRequest
+				|| tm == TransferMode::LineTriggerRequestClearDE)
+			{
+				memWrite(areaD, m_ddr, memRead(areaS, m_dsr));
+				++m_dsr;
+				++m_ddr;
+				if(m_dco)
+				{
+					--m_dco;
+					return false;
+				}
+
+				m_dco = m_dcomInit;
+				return true;
+			}
+
+			// A block transfer is initiated by one request and runs to the end of the block
+			// (DSP56300FM Table 10-5, DTM 000, 011 and 100).
 			memCopy(areaD, m_ddr, areaS, m_dsr, m_dco + 1);
 			m_dsr += m_dco + 1;
 			m_ddr += m_dco + 1;

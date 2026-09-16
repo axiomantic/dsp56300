@@ -38,7 +38,9 @@ namespace
 	constexpr TWord g_wordA = 0x0a1b2c;
 	constexpr TWord g_wordB = 0x3d4e5f;
 
-	// DCOH = 0 -> one line, DCOL = 1 -> two words in it.
+	// Post-increment on both sides is Counter Mode A (DSP56300FM Table 10-6), a
+	// single counter: DCO = 1 is two words in the block, and a request moves the
+	// first of them.
 	constexpr TWord g_dco = 0x000001;
 
 	DefaultMemoryValidator g_memoryValidator;
@@ -80,7 +82,7 @@ namespace
 		}
 
 		// Arms one channel and reports whether the request was pending at arm time,
-		// which is observable as the first line having moved.
+		// which is observable as the first word having moved.
 		bool armedAndTransferred(const TWord _channel, const TWord _hwRequestSource, const TWord _source, const TWord _destination)
 		{
 			auto& dma = p.getDMA();
@@ -90,16 +92,15 @@ namespace
 			dma.setDCO(_channel, g_dco);
 			dma.setDCR(_channel, dcrFor(_hwRequestSource));
 
-			const auto moved = mem.get(MemArea_X, _destination) == g_wordA
-				&& mem.get(MemArea_X, _destination + 1) == g_wordB;
+			const auto moved = mem.get(MemArea_X, _destination) == g_wordA;
 
-			// Whatever happened, it is all-or-nothing: a half-moved line would mean
-			// the answer below is not the one this test thinks it is reading.
+			// One request moves exactly one word, so the second word stays put either
+			// way. A second word at the destination would mean the answer below is not
+			// the one this test thinks it is reading.
+			verify(mem.get(MemArea_X, _destination + 1) == 0);
+
 			if(!moved)
-			{
 				verify(mem.get(MemArea_X, _destination) == 0);
-				verify(mem.get(MemArea_X, _destination + 1) == 0);
-			}
 
 			return moved;
 		}
