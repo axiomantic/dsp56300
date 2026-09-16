@@ -234,14 +234,16 @@ namespace dsp56k
 		OpcodeCycles{Move_ea,			1, 0, 0, 0},
 
 		OpcodeCycles{Movex_ea,			1, 1, 1, 1},
-		OpcodeCycles{Movex_aa,			2, 0, 0, 0},
+		// DSP56300FM Rev. 5 Table A-1 prints "MOVE [x or y]:aa,D 1" and a directionless "MOVE [x or y]aa 2". The write is
+		// priced as the read: MOVEC aa prints 1 both ways, and DSP56600FM Table B-1 prints one row "MOVE S:<aa>,DDDDD 1".
+		OpcodeCycles{Movex_aa,			1, 0, 0, 0},
 		OpcodeCycles{Movex_Rnxxxx,		3, 0, 0, 0},
 		OpcodeCycles{Movex_Rnxxx,		2, 0, 0, 0},
 		OpcodeCycles{Movexr_ea,			1, 1, 1, 1},
 		OpcodeCycles{Movexr_A,			1, 1, 0, 0},
 
 		OpcodeCycles{Movey_ea,			1, 1, 1, 1},
-		OpcodeCycles{Movey_aa,			2, 0, 0, 0},
+		OpcodeCycles{Movey_aa,			1, 0, 0, 0},
 		OpcodeCycles{Movey_Rnxxxx,		3, 0, 0, 0},
 		OpcodeCycles{Movey_Rnxxx,		2, 0, 0, 0},
 		OpcodeCycles{Moveyr_ea,			1, 1, 1, 1},
