@@ -48,17 +48,21 @@ namespace dsp56k
 
 			const auto eaMode = static_cast<EffectiveAddressingMode>(mmm);
 
+			// DSP56300FM Rev. 5, p. A-1: T covers "the Post-Update mode (post-increment, post-decrement and post
+			// offset by N)", so (Rn)+Nn and (Rn)-Nn pay no pru.
 			switch (eaMode)
 			{
-			case MMM_RnMinusNn:			// 000 (Rn)-Nn	
-			case MMM_RnPlusNn:			// 001 (Rn)+Nn	
 			case MMM_RnPlusNnNoUpdate:	// 101 (Rn+Nn)	
 			case MMM_MinusRn:			// 111 -(Rn)
 				c += cycles.pru;
 				break;
 			case MMM_AbsAddr:
-				c += cycles.lab;
-				c += cycles.lim;
+				// Absolute address (RRR 000) and immediate data (RRR 100) share MMM 110, and an instruction uses one
+				// or the other, so it pays lab or lim, never both.
+				if(hasField(_inst, Field_RRR) && getFieldValue(_inst, Field_RRR, _op) == RRR_ImmediateData)
+					c += cycles.lim;
+				else
+					c += cycles.lab;
 				break;
 			default:
 				break;
