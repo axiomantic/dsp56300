@@ -218,6 +218,7 @@ namespace  dsp56k
 		void bitTestMemoryEaUpdate();
 		void subr_leftAligned();
 		void ccrCrossBlockConsumer();
+		void extensionWordOverExistingBlock();
 
 		Peripherals56362 peripheralsX;
 		Peripherals56367 peripheralsY;

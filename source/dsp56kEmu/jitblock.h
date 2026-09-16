@@ -41,6 +41,9 @@ namespace dsp56k
 		JitBlock(JitEmitter& _a, DSP& _dsp, JitRuntimeData& _runtimeData, JitConfig&& _config);
 		~JitBlock();
 
+		// The instruction at _pc and, for a REP, the instruction it repeats
+		static TWord getInstructionWordCount(const DSP& _dsp, TWord _pc);
+
 		static void getInfo(JitBlockInfo& _info, const DSP& _dsp, TWord _pc, const JitConfig& _config, const MmuArray<JitCacheEntry>& _cache, const std::set<TWord>& _volatileP, const std::map<TWord, TWord>& _loopStarts, const std::set<TWord>& _loopEnds);
 
 		bool emit(JitBlockRuntimeData& _rt, JitBlockChain* _chain, TWord _pc, const MmuArray<JitCacheEntry>& _cache, const std::set<TWord>& _volatileP, const std::map<TWord, TWord>& _loopStarts, const std::set<TWord>& _loopEnds, bool _profilingSupport);
