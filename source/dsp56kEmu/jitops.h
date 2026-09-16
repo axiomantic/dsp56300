@@ -154,7 +154,7 @@ namespace dsp56k
 		void op_Extractu_S1S2(TWord op);
 		void op_Extractu_CoS2(TWord op);
 		template<bool BackupCCR> void op_Ifcc(TWord op);
-		void op_Illegal(TWord op)			{ errNotImplemented(op); }
+		void op_Illegal(TWord op);
 		void op_Inc(TWord op);
 		void op_Insert_S1S2(TWord op);
 		void op_Insert_CoS2(TWord op);
@@ -720,6 +720,10 @@ namespace dsp56k
 		};
 
 		void errNotImplemented(TWord op);
+
+		// A word the opcode table does not describe, as opposed to one it describes and this
+		// generator has no emitter for - which is errNotImplemented.
+		void errIllegalInstruction(TWord _pc, TWord op);
 
 		JitBlock& m_block;
 		JitBlockRuntimeData& m_blockRuntimeData;

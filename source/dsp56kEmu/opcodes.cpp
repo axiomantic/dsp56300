@@ -107,7 +107,20 @@ namespace dsp56k
 	{
 		const auto lenA = _instA != Invalid ? dsp56k::getOpcodeLength(_instA, _op) : 0;
 		const auto lenB = _instB != Invalid ? dsp56k::getOpcodeLength(_instB, _op) : 0;
-		return std::max(lenA, lenB);
+
+		/*	Both operands Invalid means the word matched no table entry, and there is no length to
+			measure. Every caller adds this return to a program counter to reach the next word, so
+			the honest answer of 0 makes that step a no-op and the caller reads the same address
+			again - forever, in the case of the block walk in JitBlock::getInfo. The floor lives
+			here rather than at each call site so that a caller cannot fail to apply it; the
+			debugger's disassembly walk is one of the callers, and it has to be able to step over a
+			word it cannot name rather than throw.
+
+			One word is the smallest step that reaches a different address. It is not a claim about
+			what an unrecognised word does - only that whatever it is, it cannot occupy less than
+			the word it was read from.
+		*/
+		return std::max(std::max(lenA, lenB), 1u);
 	}
 
 	bool Opcodes::writesToPMemory(const TWord _op) const

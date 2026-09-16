@@ -123,6 +123,12 @@ namespace dsp56k
 
 		std::vector<std::function<void()>>			m_customInterrupts;
 
+		// An interrupt source has at most one interrupt pending at a time (DSP56300 Family Manual
+		// Rev. 5, 2.3.2.6). The Illegal Instruction Interrupt is serviced before the next instruction,
+		// so a second raise can find one pending only inside a fast interrupt routine, which is not
+		// interruptible (2.3.2.8).
+		bool										m_illegalInstructionPending = false;
+
 		Opcodes							m_opcodes;
 
 		struct OpcodeCacheEntry
@@ -255,6 +261,7 @@ namespace dsp56k
 		void	execInterrupts					();
 		void	execInterrupt					(uint32_t vba);
 		void	execDefaultPreventInterrupt		();
+		void	execIllegalInstructionInterrupt	();
 
 		bool	readReg							( EReg _reg, TReg8& _res ) const;
 		bool	readReg							( EReg _reg, TReg48& _res ) const;
@@ -293,6 +300,9 @@ namespace dsp56k
 		bool			hasPendingInterrupts			() const
 		{
 			if(m_processingMode != Default)
+				return true;
+
+			if(m_illegalInstructionPending)
 				return true;
 
 			if(!m_pendingExternalInterrupts.empty())
@@ -410,6 +420,8 @@ namespace dsp56k
 		}
 
 		void 	execOp							(TWord op);
+
+		void	scheduleIllegalInstructionInterrupt	();
 
 		void	exec_jump						(const TInstructionFunc& _func, TWord _op);
 		

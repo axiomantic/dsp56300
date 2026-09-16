@@ -348,7 +348,20 @@ namespace dsp56k
 	}
 	inline void DSP::op_Illegal(const TWord op)
 	{
-		errNotImplemented("ILLEGAL");
+		/*	DSP56300 Family Manual Rev. 5: ILLEGAL "executes as if it were a NOP instruction" and then
+			starts illegal instruction exception processing, and 2.3.2.2 gives any undefined operation
+			code the same Illegal Instruction Interrupt, "serviced immediately after the illegal
+			instruction executes". It is IPL 3, which no mask level blocks and which interrupts a long
+			interrupt routine. A fast interrupt routine is not interruptible, so a raise inside one is
+			serviced by execInterrupt once the routine ends.
+		*/
+		if(m_illegalInstructionPending)
+			return;
+
+		m_illegalInstructionPending = true;
+
+		if(m_processingMode != FastInterrupt)
+			scheduleIllegalInstructionInterrupt();
 	}
 
 	inline void DSP::op_Lra_Rn(const TWord op)
@@ -608,13 +621,9 @@ namespace dsp56k
 		{
 			const auto* oi = m_opcodes.findNonParallelOpcodeInfo(op);
 
-			if(!oi)
-			{
-				m_opcodes.findNonParallelOpcodeInfo(op);		// retry here to help debugging
-				assert(0 && "illegal instruction");
-			}
-
-			cacheEntry.op = resolvePermutation(oi->m_instruction, op);
+			// A word the table does not describe is an undefined operation code, which silicon
+			// handles exactly as it handles ILLEGAL.
+			cacheEntry.op = resolvePermutation(oi ? oi->m_instruction : Illegal, op);
 
 			exec_jump(cacheEntry.op, op);
 			return;

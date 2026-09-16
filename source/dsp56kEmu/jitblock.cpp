@@ -3,6 +3,10 @@
 #include "jitemitter.h"
 #include "jitblock.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include "jitblockinfo.h"
 #include "jitblockruntimedata.h"
 #include "jitops.h"
@@ -11,6 +15,32 @@
 
 namespace dsp56k
 {
+	namespace
+	{
+		bool isUndecodable(const Instruction _instA, const Instruction _instB)
+		{
+			return _instA == Invalid && _instB == Invalid;
+		}
+
+		void throwIfUndecodable(const TWord _pc, const TWord _op, const Instruction _instA, const Instruction _instB)
+		{
+			/*	An undefined word as the instruction a REP repeats ends the run. The emitter repeats that
+				instruction inside the REP and charges its cycles by decoding it again, and the
+				interrupt an undefined word raises is not initiated until the REP completes, so
+				translating it takes more than treating the word as ILLEGAL. The address is reported
+				because the word alone does not locate it - the same value can appear many times in
+				one image.
+			*/
+			if(isUndecodable(_instA, _instB))
+			{
+				LOG("FATAL: undecodable instruction word $" << HEX(_op) << " at P:$" << HEX(_pc));
+				Assert::show("undecodable instruction word, see console for details", __func__, __LINE__);
+				// Assert::show logs and throws on most platforms, but on Windows it returns.
+				throw std::runtime_error("undecodable instruction word, see console for details");
+			}
+		}
+	}
+
 	JitBlock::JitBlock(JitEmitter& _a, DSP& _dsp, JitRuntimeData& _runtimeData, JitConfig&& _config)
 	: m_runtimeData(_runtimeData)
 	, m_asm(_a)
@@ -148,6 +178,19 @@ namespace dsp56k
 
 			opcodes.getInstructionTypes(opA, instA, instB);
 
+			/*	A word that matches no encoding is an undefined operation code. Silicon does not stop on
+				one: it runs it as ILLEGAL, a NOP followed by the Illegal Instruction Interrupt (DSP56300
+				Family Manual Rev. 5, 2.3.2.2 and ILLEGAL), and the vector decides what happens next.
+				Classifying the word as ILLEGAL gives it the length, registers and cycles of that
+				instruction, so the walk advances by one word and the block that holds it is never
+				empty.
+			*/
+			if(isUndecodable(instA, instB))
+				instA = Illegal;
+
+			if(instA == Illegal)
+				_info.addFlag(JitBlockInfo::Flags::RaisesIllegalInstruction);
+
 			const auto flags = Opcodes::getFlags(instA, instB);
 
 			auto written = RegisterMask::None;
@@ -173,6 +216,7 @@ namespace dsp56k
 
 				Instruction repInstA, repInstB;
 				opcodes.getInstructionTypes(repA, repInstA, repInstB);
+				throwIfUndecodable(pcRepeated, repA, repInstA, repInstB);
 
 				auto repWritten = RegisterMask::None;
 				auto repRead = RegisterMask::None;
@@ -371,6 +415,15 @@ namespace dsp56k
 				break;
 			}
 
+			// The interrupt is serviced between blocks, so ending the block here services it before
+			// the next instruction runs rather than at whatever ends the block later. A fast interrupt
+			// block is exempt: it must hold both vector words, and a fast interrupt is not interruptible.
+			if(instA == Illegal && !isFastInterrupt)
+			{
+				terminationReason = JitBlockInfo::TerminationReason::IllegalInstruction;
+				break;
+			}
+
 			if(srModeChange)
 			{
 				terminationReason = JitBlockInfo::TerminationReason::ModeChange;
@@ -472,7 +525,7 @@ namespace dsp56k
 			{
 				Instruction instA, instB;
 				m_dsp.opcodes().getInstructionTypes(opA, instA, instB);
-				const auto& oi = g_opcodes[instA];
+				const auto& oi = g_opcodes[isUndecodable(instA, instB) ? Illegal : instA];
 
 				if(oi.flag(OpFlagRepImmediate) || oi.flag(OpFlagRepDynamic))
 				{
@@ -653,6 +706,10 @@ namespace dsp56k
 				ordinary counted DO pays nothing for it.
 			*/
 			if (isLoopForever)
+				return false;
+
+			// Iterating inside the block would also hold back the interrupt the loop raises each pass.
+			if (info.hasFlag(JitBlockInfo::Flags::RaisesIllegalInstruction))
 				return false;
 
 			const SkipLabel skip(m_asm);
