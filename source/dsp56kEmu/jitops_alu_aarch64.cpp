@@ -183,15 +183,29 @@ namespace dsp56k
 		m_asm.eor(_dst.get(), _dst.get(), asmjit::Imm(1ull << _bit));
 	}
 
+	// The register form of LSL and LSR takes the low six bits of the source, so the
+	// count reaches 63 while the operand is 24 bits wide, and a 32 bit shift truncates
+	// the count to five. Both shifts are therefore done 64 bits wide, where the count
+	// is truncated to six bits instead and so passes through unchanged: every count
+	// from 24 upwards then moves the whole operand out of the low 24 bits, which is
+	// the result the instruction defines, and the bit holding the last one shifted out
+	// is still in the register to be copied into the carry.
 	void JitOps::alu_lsl(TWord ab, const DspValue& _shiftAmount)
 	{
 		DspValue d(m_block);
 		getALU1(d, ab);
 
 		if(_shiftAmount.isImm24())
-			m_asm.lsl(r32(d), r32(d), asmjit::Imm(_shiftAmount.imm24()));
+		{
+			m_asm.lsl(r64(d), r64(d), asmjit::Imm(_shiftAmount.imm24() & 0x3f));
+		}
 		else
-			m_asm.lsl(r32(d), r32(d), _shiftAmount.get());
+		{
+			const RegGP s(m_block);
+			m_asm.mov(r32(s), r32(_shiftAmount.get()));
+			m_asm.and_(r32(s), asmjit::Imm(0x3f));
+			m_asm.lsl(r64(d), r64(d), r64(s));
+		}
 
 		copyBitToCCR(r32(d), 24, CCRB_C);
 
@@ -208,14 +222,21 @@ namespace dsp56k
 	{
 		DspValue d(m_block);
 		getALU1(d, ab);
-		m_asm.lsl(r32(d), r32(d), asmjit::Imm(1));		// we need to preseve the carry bit to be able to copy it
+		m_asm.lsl(r64(d), r64(d), asmjit::Imm(1));		// we need to preseve the carry bit to be able to copy it
 		if(_shiftAmount.isImm24())
-			m_asm.lsr(r32(d), r32(d), asmjit::Imm(_shiftAmount.imm24()));
+		{
+			m_asm.lsr(r64(d), r64(d), asmjit::Imm(_shiftAmount.imm24() & 0x3f));
+		}
 		else
-			m_asm.lsr(r32(d), r32(d), _shiftAmount.get());
+		{
+			const RegGP s(m_block);
+			m_asm.mov(r32(s), r32(_shiftAmount.get()));
+			m_asm.and_(r32(s), asmjit::Imm(0x3f));
+			m_asm.lsr(r64(d), r64(d), r64(s));
+		}
 
 		copyBitToCCR(r32(d), 0, CCRB_C);
-		m_asm.lsr(r32(d), r32(d), asmjit::Imm(1));
+		m_asm.lsr(r64(d), r64(d), asmjit::Imm(1));
 
 		m_asm.test_(r32(d.get()));
 		ccr_update_ifZero(CCRB_Z);

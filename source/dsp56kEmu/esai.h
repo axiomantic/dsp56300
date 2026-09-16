@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "dma.h"
 #include "esxi.h"
 #include "dsp56kBase/logging.h"
 #include "dsp56kBase/bitfield.h"
@@ -263,7 +264,17 @@ namespace dsp56k
 			M_IF0 = 0,					// Serial Input Flag 0
 		};
 
-		explicit Esai(IPeripherals& _periph, EMemArea _area, Dma* _dma = nullptr);
+		// The DMA request source pair is a construction parameter, in the same
+		// way that HDI08 selects its pair by chip variant. ESAI_1 triggers
+		// Esai1ReceiveData and Esai1TransmitData, and the primary ESAI keeps
+		// the pair named in the defaults.
+		explicit Esai(IPeripherals& _periph, EMemArea _area, Dma* _dma = nullptr,
+			DmaChannel::RequestSource _dmaReceiveSource = DmaChannel::RequestSource::EsaiReceiveData,
+			DmaChannel::RequestSource _dmaTransmitSource = DmaChannel::RequestSource::EsaiTransmitData,
+			bool _useRingBuffers = true);
+
+		DmaChannel::RequestSource getDmaReceiveSource() const	{ return m_dmaReceiveSource; }
+		DmaChannel::RequestSource getDmaTransmitSource() const	{ return m_dmaTransmitSource; }
 
 		void reset();
 		void setDSP(DSP* _dsp);
@@ -360,6 +371,21 @@ namespace dsp56k
 
 		uint32_t getTxFrameCounter() const { return m_txFrameCounter; }
 
+		// TRUE while the transmit frame currently being assembled carries at least
+		// one slot that underran, and it stays true until that frame has been
+		// delivered.
+		//
+		// M_TUE CANNOT ANSWER THIS QUESTION AND THIS FLAG IS NOT A DUPLICATE OF IT.
+		// M_TUE is a SLOT-lifetime status bit: writeSlotToFrame raises it and then
+		// triggers the transmit DMA, whose answer reaches writeTX, which clears the
+		// bit as soon as every enabled transmitter has been written. On a machine
+		// whose DMA is running that clear lands inside the same slot, several slots
+		// before execTX delivers the frame that carries the stale slot. A consumer
+		// outside the peripheral reads the frame, not the slot, so a consumer that
+		// asks M_TUE at delivery time is asking a bit that has already been reset
+		// by the very mechanism it is trying to observe.
+		bool txUnderrunInFrame() const noexcept { return m_txUnderrunInFrame; }
+
 		uint32_t getTxWordCount() const
 		{
 			return (m_tccr & M_TDC) >> M_TDC0;
@@ -435,6 +461,8 @@ namespace dsp56k
 		const EMemArea m_area;
 		const TWord m_vba;							// base address for interrupts differs between ESAI and ESAI_1 (on DSP 56367)
 		Dma* const m_dma;
+		const DmaChannel::RequestSource m_dmaReceiveSource;
+		const DmaChannel::RequestSource m_dmaTransmitSource;
 		Bitfield<uint32_t, SrBits, 18> m_sr;		// status register
 		TWord m_cr = 0;								// control register
 
@@ -454,6 +482,7 @@ namespace dsp56k
 		uint32_t m_readRX = 0;
 		uint32_t m_txSlotCounter = 0;
 		uint32_t m_txFrameCounter = 0;
+		bool m_txUnderrunInFrame = false;	// see txUnderrunInFrame(): frame-lifetime, unlike M_TUE
 		uint32_t m_rxSlotCounter = 0;
 		uint32_t m_rxFrameCounter = 0;
 

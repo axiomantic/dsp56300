@@ -1,5 +1,9 @@
 #include "jitops.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitblockruntimedata.h"
@@ -433,11 +437,21 @@ namespace dsp56k
 		fprintf(stderr, "*** JIT errNotImplemented: opcode=$%06X\n", op);
 		fflush(stderr);
 
-		// The block advances by m_opSize, which stays 1 unless the implementation fetches the
-		// extension word. For an unimplemented two word instruction that leaves the immediate to be
-		// compiled as the next instruction, so skip the real length instead.
-		m_opSize = m_opcodes.getOpcodeLength(op);
-		assert(0 && "instruction not implemented");
+		// See DSP::errNotImplemented: assert() is a no-op without _DEBUG, so the
+		// generator would emit nothing for the opcode and the block would run on as
+		// though it had been translated.
+		Assert::show("instruction not implemented", __func__, __LINE__);
+
+		// Assert::show logs and throws on most platforms, but on Windows it returns.
+		// An unimplemented opcode has to be unsurvivable on every platform: a return
+		// here is indistinguishable to the caller from having executed the
+		// instruction.
+		//
+		// Upstream instead advances m_opSize by the opcode's real length and lets the
+		// block compile on. That recovery is unreachable once this throws, so it is not
+		// carried here: the fork wants the failure to stop the run rather than to be
+		// survived.
+		throw std::runtime_error("instruction not implemented");
 	}
 
 	/*	Open a loop. Shared by DO and DO FOREVER, which differ in exactly two ways: FOREVER does not

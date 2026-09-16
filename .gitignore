@@ -6,3 +6,8 @@ bin/*.exe
 *.pdb
 *.user
 CMakeUserPresets.json
+
+# Build trees. The sanitizer workflow creates build-asan, and a contributor
+# running it locally would otherwise commit it.
+build/
+build-asan/

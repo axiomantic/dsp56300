@@ -370,7 +370,7 @@ namespace dsp56k
 			m_currentChain->setMaxUsedPAddress(m_maxUsedPAddress);
 		}
 
-		m_dsp.setJitEntries(m_currentChain->getFuncs().data());
+		m_dsp.setJitEntries(m_currentChain->getFuncs().data(), static_cast<TWord>(m_currentChain->getFuncs().size()));
 	}
 
 	void Jit::onDebuggerAttached(DebuggerInterface& _debugger) const
@@ -444,7 +444,7 @@ namespace dsp56k
 	{
 		if(&_chain == m_currentChain)
 		{
-			m_dsp.setJitEntries(_chain.getFuncs().data());
+			m_dsp.setJitEntries(_chain.getFuncs().data(), static_cast<TWord>(_chain.getFuncs().size()));
 		}
 	}
 }

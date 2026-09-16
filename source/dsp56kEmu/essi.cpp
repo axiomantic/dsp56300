@@ -11,8 +11,9 @@
 
 namespace dsp56k
 {
-	Essi::Essi(Peripherals56303& _peripheral, const uint32_t _essiIndex)
-		: m_periph(_peripheral)
+	Essi::Essi(Peripherals56303& _peripheral, const uint32_t _essiIndex, const bool _useRingBuffers/* = true*/)
+		: Esxi(_useRingBuffers)
+		, m_periph(_peripheral)
 		, m_index(_essiIndex)
 	{
 		m_tx.fill(0);

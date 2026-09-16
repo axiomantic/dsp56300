@@ -1,5 +1,9 @@
 #include "jitblockchain.h"
 
+#include "dsp56kBase/dspassert.h"
+
+#include <stdexcept>
+
 #include "dsp.h"
 #include "jitasmjithelpers.h"
 #include "jitblockruntimedata.h"
@@ -13,7 +17,6 @@
 namespace dsp56k
 {
 	void funcRun(JitDspPtr* _jit, TWord _pc) noexcept;
-	void funcCreate(JitDspPtr* _jit, TWord _pc) noexcept;
 	void funcRecreate(JitDspPtr* _jit, TWord _pc) noexcept;
 
 	JitBlockChain::JitBlockChain(Jit& _jit, const JitDspMode& _mode, const size_t _usedFuncSize) : m_jit(_jit), m_mode(_mode)
@@ -68,7 +71,10 @@ namespace dsp56k
 		const auto& e = m_jitCache[_pc];
 		if (!e.block)
 			return false;
-		return m_jitFuncs[_pc] == e.block->getFunc() || m_jitFuncs[_pc] == &funcRun;
+		// Through getFunc: the guard above is on the cache, and the two arrays do not have
+		// to be the same length -- ensureCacheSize grows one of them on its own.
+		const auto func = getFunc(_pc);
+		return func == e.block->getFunc() || func == &funcRun;
 	}
 
 	void JitBlockChain::occupyArea(JitBlockRuntimeData* _block)
@@ -76,7 +82,16 @@ namespace dsp56k
 		const auto first = _block->getPCFirst();
 		const auto last = first + _block->getPMemSize();
 
-		ensureSize(last - 1);
+		// `last` is where this block hands control back. Every read of the entry table is
+		// bounded now, so a table that does not reach `last` is no longer unsafe -- it just
+		// sends the address it does not have through funcCreate. Sizing to `last` rather
+		// than `last - 1` keeps the ordinary fall-through on the path that has an entry
+		// already: the table otherwise grows only on a P write whose value differed from
+		// what was there, and an opcode word of zero over already-zero P memory is no
+		// change, so nothing would cover it. A block ending at the top of P has no
+		// successor inside P, hence the clamp.
+		const auto pSize = m_jit.dsp().memory().sizeP();
+		ensureSize(last < pSize ? last : pSize - 1);
 
 		for (auto i = first; i < last; ++i)
 		{
@@ -112,7 +127,29 @@ namespace dsp56k
 	{
 //		LOG("Create @ " << HEX(_pc));// << std::endl << cacheEntry.block->getDisasm());
 
+		// Every read of the entry table that is out of range resolves to funcCreate, which
+		// arrives here, so this is the one place that has to say what a PC outside emulated
+		// P memory means. Memory::size(MemArea_P) is the emulator's own answer to how big P
+		// is -- Memory::get and Memory::dspWrite refuse an offset past it -- so a block
+		// cannot be built at one, and everything below this line indexes the cache and reads
+		// opcodes at _pc. Ending the run is the only outcome a caller cannot mistake for
+		// having executed the block.
+		const auto pSize = m_jit.dsp().memory().sizeP();
+
+		if(_pc >= pSize)
+		{
+			LOG("FATAL: PC $" << HEX(_pc) << " is outside P memory, which ends at $" << HEX(pSize));
+			Assert::show("jump to an address outside P memory, see console for details", __func__, __LINE__);
+			// Assert::show logs and throws on most platforms, but on Windows it returns.
+			throw std::runtime_error("jump to an address outside P memory, see console for details");
+		}
+
 		ensureCacheSize(_pc+1);
+
+		// Only a block that is still being generated refuses eviction, and getChildBlock does not
+		// call this while one of those is in the way.
+		[[maybe_unused]] const auto evicted = evictBlocksUnderInstruction(_pc);
+		assert(evicted);
 
 		auto& cacheEntry = m_jitCache[_pc];
 
@@ -139,7 +176,9 @@ namespace dsp56k
 
 			if(cacheEntry.isValid(it))
 			{
-				if(cacheEntryLen == 1 || m_jitCache[_pc+1].block == nullptr)
+				// For the block at the last address in P, _pc+1 is one past the end of the
+				// cache, and asking whether that address holds a block reads it.
+				if(cacheEntryLen == 1 || _pc+1 >= m_jitCache.size() || m_jitCache[_pc+1].block == nullptr)
 				{
 //					LOG("Returning single-op " << HEX(opA) << " at PC " << HEX(_pc));
 					assert(cacheEntry.block == nullptr);
@@ -292,7 +331,24 @@ namespace dsp56k
 		if(!_allowCreate && _pc >= m_jitCache.size())
 			return nullptr;
 
+		// _pc is an address the block being generated will hand control to: a branch target
+		// the guest named, or the address after a block that ends at the top of P memory.
+		// Neither is bounded by the size of the arrays, and the second is not bounded by P
+		// memory either. Refusing before ensureSize is what matters: ensureSize would grow
+		// the fallback to cover an address P memory does not have, and the create call that
+		// followed would then be fatal for a block that is perfectly legal. Not linking is
+		// what this function already does for every target it cannot take, and the caller
+		// returns to the trampoline, whose read of the entry table is bounded in its own
+		// right.
+		if(_pc >= m_jit.dsp().memory().sizeP())
+			return nullptr;
+
 		ensureSize(_pc);
+
+		// And on the MMU path ensureSize cannot grow at all, so the arrays are asked rather
+		// than assumed.
+		if(_pc >= m_jitCache.size() || _pc >= m_jitFuncs.size())
+			return nullptr;
 
 		{
 			const auto& e = m_jitCache[_pc];
@@ -321,6 +377,9 @@ namespace dsp56k
 			if (e.block)
 				destroy(e.block);
 		}
+
+		if(!evictBlocksUnderInstruction(_pc))
+			return nullptr;
 
 		create(_pc, false);
 
@@ -411,6 +470,37 @@ namespace dsp56k
 			d->onJitBlockCreated(m_mode, b);
 #endif
 		return b;
+	}
+
+	/*	A block that starts under a later word of the instruction at _pc is the same collision as
+		jumping into the middle of a block, seen from the other side, and gets the same answer: the
+		existing block goes and is rebuilt when its address is entered again. Leaving it would let
+		occupyArea take its entry table slot, after which nothing can find it to destroy it while
+		parents linked to it keep jumping into its code.
+	*/
+	bool JitBlockChain::evictBlocksUnderInstruction(const TWord _pc)
+	{
+		const auto words = JitBlock::getInstructionWordCount(m_jit.dsp(), _pc);
+
+		for(TWord i = 1; i < words; ++i)
+		{
+			const auto addr = _pc + i;
+
+			if(addr >= m_jitCache.size())
+				break;
+
+			const auto block = m_jitCache[addr].block;
+
+			if(!block)
+				continue;
+
+			if(isBeingGeneratedRecursive(block))
+				return false;
+
+			destroy(block);
+		}
+
+		return true;
 	}
 
 	bool JitBlockChain::isBeingGeneratedRecursive(const JitBlockRuntimeData* _block) const

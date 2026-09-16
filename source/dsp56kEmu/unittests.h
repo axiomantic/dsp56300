@@ -109,6 +109,9 @@ namespace  dsp56k
 		void jscc();
 		void lra();
 		void lsl();
+		void lslLsrOversizedShift();
+		void asrOversizedShift();
+		void asrCarry();
 		void lsr();
 		void lua_ea();
 		void lua_rn();
@@ -215,6 +218,7 @@ namespace  dsp56k
 		void bitTestMemoryEaUpdate();
 		void subr_leftAligned();
 		void ccrCrossBlockConsumer();
+		void extensionWordOverExistingBlock();
 
 		Peripherals56362 peripheralsX;
 		Peripherals56367 peripheralsY;

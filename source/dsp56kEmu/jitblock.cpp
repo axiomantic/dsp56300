@@ -27,6 +27,30 @@ namespace dsp56k
 
 	JitBlock::~JitBlock() = default;
 
+	TWord JitBlock::getInstructionWordCount(const DSP& _dsp, const TWord _pc)
+	{
+		TWord opA, opB;
+		_dsp.memory().getOpcode(_pc, opA, opB);
+
+		Instruction instA, instB;
+		_dsp.opcodes().getInstructionTypes(opA, instA, instB);
+
+		auto words = Opcodes::getOpcodeLength(opA, instA, instB);
+
+		if(Opcodes::getFlags(instA, instB) & (OpFlagRepDynamic | OpFlagRepImmediate))
+		{
+			TWord repA, repB;
+			_dsp.memory().getOpcode(_pc + words, repA, repB);
+
+			Instruction repInstA, repInstB;
+			_dsp.opcodes().getInstructionTypes(repA, repInstA, repInstB);
+
+			words += Opcodes::getOpcodeLength(repA, repInstA, repInstB);
+		}
+
+		return words;
+	}
+
 	void JitBlock::getInfo(JitBlockInfo& _info, const DSP& _dsp, const TWord _pc, const JitConfig& _config, const MmuArray<JitCacheEntry>& _cache, const std::set<TWord>& _volatileP, const std::map<TWord, TWord>& _loopStarts, const std::set<TWord>& _loopEnds)
 	{
 		const auto& opcodes = _dsp.opcodes();
@@ -159,6 +183,31 @@ namespace dsp56k
 
 				repeatedLength = Opcodes::getOpcodeLength(repA, repInstA, repInstB);
 				repeatedCycles = calcCycles(repInstA, repInstB, pcRepeated, repA, _dsp.memory().getBridgedMemoryAddress(), 1);
+			}
+
+			/*	The check above sees code that starts where this instruction starts. Code can also start
+				under one of its later words - an extension word, or the instruction a REP repeats - and
+				the entry table holds one block per address, so the two cannot both stay. Ending the block
+				here hands the instruction to a block of its own, and the chain evicts the other block
+				before it builds that one.
+			*/
+			if(numInstructions)
+			{
+				const auto instructionWords = Opcodes::getOpcodeLength(opA, instA, instB) + repeatedLength;
+
+				bool overlapsExistingCode = false;
+
+				for(TWord w = 1; w < instructionWords; ++w)
+				{
+					if(pc + w < _cache.size() && _cache[pc + w].block)
+						overlapsExistingCode = true;
+				}
+
+				if(overlapsExistingCode)
+				{
+					terminationReason = JitBlockInfo::TerminationReason::ExistingCode;
+					break;
+				}
 			}
 
 			const auto writtenM = (written & RegisterMask::M);
@@ -689,12 +738,23 @@ namespace dsp56k
 				left only by ENDDO. Which kind of loop this is was settled when the block was
 				compiled, so a counted DO emits exactly what it always did.
 			*/
-			if(!isLoopForever)
-			{
-				m_asm.cmp(lc, asmjit::Imm(1));
-				m_asm.jle(enddo);
-				m_asm.dec(lc);
-			}
+			// SR.FV marks a DO FOREVER loop. Its LC is decremented on every wrap but never
+			// tested, so the count must not be allowed to retire the loop: only ENDDO or
+			// BRKcc may, and both clear LF above. Tested at run time rather than through the
+			// compile-time isLoopForever flag because a counted DO nested inside a forever
+			// loop shares the block's flag but must still retire on its own count.
+			const auto wrap = m_asm.newLabel();
+
+			m_asm.bitTest(sr, SRB_FV);
+			m_asm.jnz(wrap);
+
+			m_asm.cmp(lc, asmjit::Imm(1));
+			m_asm.jle(enddo);
+
+			m_asm.bind(wrap);
+			m_asm.dec(lc);
+			// LC is architecturally 24 bits and a forever loop drives it through zero
+			m_asm.and_(lc, asmjit::Imm(0xffffff));
 
 			if(isLoopBody)
 			{

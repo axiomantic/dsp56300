@@ -164,6 +164,15 @@ namespace dsp56k
 		ccr_update_ifCarry(CCRB_C);
 	}
 
+	// The register form of LSL and LSR takes the low six bits of the source, so the
+	// count reaches 63 while the operand is 24 bits wide. Both shifts are therefore
+	// done 64 bits wide, where the processor truncates the count to six bits and so
+	// passes the whole range through: every count from 24 upwards then moves the
+	// operand out of the low 24 bits, which is the result the instruction defines.
+	// The carry is read out of the register rather than off the native carry flag,
+	// because the flag only carries the bit that leaves bit 63, and a 24 bit operand
+	// shifted by at most 63 never reaches it. This is the same shape as the arm64
+	// back end. See jitops_alu_aarch64.cpp.
 	void JitOps::alu_lsl(TWord ab, const DspValue& _shiftAmount)
 	{
 		// Z is written below, so it belongs in the batch: in a batch a flag is only OR'ed in, and a Z left
@@ -177,15 +186,18 @@ namespace dsp56k
 		// bit register: the register count shifted all 64 bits, so the carry came from bit 56 - n, always zero.
 		if(_shiftAmount.isImm24())
 		{
-			m_asm.shl(r64(d.get()), _shiftAmount.imm24());
+			m_asm.shl(r64(d.get()), asmjit::Imm(_shiftAmount.imm24() & 0x3f));
 		}
 		else
 		{
 			ShiftReg s(m_block);
 			m_asm.mov(r32(s), r32(_shiftAmount.get()));
+			m_asm.and_(r32(s), asmjit::Imm(0x3f));
 			m_asm.shl(r64(d.get()), s.get().r8());
 		}
-		copyBitToCCR(d.get(), 24, CCRB_C);		// clear for a count of zero as well
+
+		copyBitToCCR(d.get(), 24, CCRB_C);		// the last bit shifted out of the 24 bit operand
+
 		m_asm.and_(r32(d.get()), asmjit::Imm(0xffffff));
 		ccr_update_ifZero(CCRB_Z);
 		copyBitToCCR(d.get(), 23, CCRB_N);
@@ -198,17 +210,22 @@ namespace dsp56k
 		CcrBatchUpdate bu(*this, static_cast<CCRMask>(CCR_N | CCR_Z | CCR_C | CCR_V));	// Z too: a batch only ORs flags in
 		DspValue d(m_block);
 		getALU1(d, ab);
+		m_asm.shl(r64(d.get()), asmjit::Imm(1));	// we need to preserve the carry bit to be able to copy it
 		if(_shiftAmount.isImm24())
 		{
-			m_asm.shr(r32(d.get()), _shiftAmount.imm24());
+			m_asm.shr(r64(d.get()), asmjit::Imm(_shiftAmount.imm24() & 0x3f));
 		}
 		else
 		{
 			ShiftReg s(m_block);
 			m_asm.mov(r32(s), r32(_shiftAmount.get()));
+			m_asm.and_(r32(s), asmjit::Imm(0x3f));
 			m_asm.shr(r64(d.get()), s.get().r8());
 		}
-		ccr_update_ifCarry(CCRB_C);
+
+		copyBitToCCR(d.get(), 0, CCRB_C);
+
+		m_asm.shr(r64(d.get()), asmjit::Imm(1));
 		m_asm.test_(r32(d.get()));
 		ccr_update_ifZero(CCRB_Z);
 		copyBitToCCR(d.get(), 23, CCRB_N);

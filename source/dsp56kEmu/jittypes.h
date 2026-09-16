@@ -16,6 +16,14 @@ namespace dsp56k
 	using JitDspPtr = DspRegs;
 
 	typedef void (*TJitFunc)(JitDspPtr*, TWord) noexcept;
+
+	// What an entry table slot holds when no JIT block has been made for its address
+	// yet. It is also what every read of the table resolves to when the index is not
+	// one the table has: the two cases mean the same thing to the caller, and giving
+	// them the same answer is what lets the read be bounded without a second outcome
+	// to define. Declared here rather than in jit.h so the read sites in DSP can name
+	// it without pulling the JIT in.
+	void funcCreate(JitDspPtr* _jit, TWord _pc) noexcept;
 }
 
 #if defined(HAVE_ARM64)

@@ -111,6 +111,9 @@ namespace dsp56k
 		TInterruptFunc					m_interruptFunc;
 
 		const TJitFunc*					m_jitEntries = nullptr;
+		// Kept next to the pointer it bounds, and read by the generated exec loop as well as
+		// by jitEntry() below. A table that grows keeps this in step through setJitEntries.
+		TWord							m_jitEntriesSize = 0;
 		CCRCache						ccrCache;
 
 		// The lock-free ring buffer's counters are now atomic (release/acquire), so it is correct on ARM too -
@@ -199,7 +202,7 @@ namespace dsp56k
 			LOGJITPC(pc);
 			// must go through the trampoline: it establishes regDspPtr, which blocks no longer set up
 			// themselves. A direct call here leaves regDspPtr at whatever the caller happened to have.
-			m_jit.getTrampoline().execOne(&reg, pc, m_jitEntries[pc]);
+			m_jit.getTrampoline().execOne(&reg, pc, jitEntry(pc));
 		}
 
 		ASMJIT_FORCE_INLINE void execInterpreter() noexcept
@@ -347,8 +350,22 @@ namespace dsp56k
 		Jit&			getJit							() { return m_jit; }
 		const Jit&		getJit							() const { return m_jit; }
 
-		void			setJitEntries					(const TJitFunc* _funcs)			{ m_jitEntries = _funcs; }
+		void			setJitEntries					(const TJitFunc* _funcs, const TWord _size)	{ m_jitEntries = _funcs; m_jitEntriesSize = _size; }
 		const auto&		getJitEntries					() const			{ return m_jitEntries; }
+		const auto&		getJitEntriesSize				() const			{ return m_jitEntriesSize; }
+
+		// The only read of the entry table in C++. The index is a guest PC: a value the
+		// program computes and can put anywhere in 24 bits, while the table is sized to P
+		// memory, which is smaller. A jmp through a register, an rts to a stacked address
+		// and an interrupt vector all reach here with one, and none of them is constrained
+		// by what the table happens to cover.
+		//
+		// An index the table does not have resolves to funcCreate, which is what an index it
+		// does have holds until a block is made there. So the out-of-range case needs no
+		// behaviour of its own: it takes the create path, that path grows the table where
+		// growing is possible, and it is the one place that has to decide what a PC outside
+		// emulated P memory means.
+		TJitFunc		jitEntry						(const TWord _pc) const noexcept	{ return _pc < m_jitEntriesSize ? m_jitEntries[_pc] : &funcCreate; }
 
 		const auto&		getInterruptFunc				() const			{ return m_interruptFunc; }
 		auto			getExecPeripheralsFunc			() const			{ return m_execPeripheralsFunc; }
@@ -399,6 +416,8 @@ namespace dsp56k
 		bool	exec_parallel					(const TInstructionFunc& _instMove, const TInstructionFunc& _instAlu, TWord _op);
 
 		bool	do_exec							( TWord _loopcount, TWord _addr );
+		bool	do_execForever					( TWord _addr );
+		bool	do_execImpl						( TWord _loopcount, TWord _addr, bool _forever );
 		bool	do_end							();
 
 		bool	rep_exec						(TWord _loopCount);
@@ -646,7 +665,7 @@ namespace dsp56k
 		TReg56	aluB			() const							{ return TReg56(static_cast<TReg56::MyType>((reg.b.var >> g_aluShift) & TReg56::bitMask)); }
 		TReg56	getALU			(const bool _b) const				{ return _b ? aluB() : aluA(); }
 
-		void	setALU			(const bool _b, const TReg56& _v)	{ (_b ? reg.b : reg.a).var = _v.var << g_aluShift; }
+		void	setALU			(const bool _b, const TReg56& _v)	{ (_b ? reg.b : reg.a).var = shiftLeft(_v.var, g_aluShift); }
 
 		// Left-aligned domain helpers. The accumulator occupies bits 63..8, so the 56-bit mask and the
 		// sign extension that the right-aligned form needed both change shape:
@@ -723,7 +742,7 @@ namespace dsp56k
 				// Sixteen-bit Arithmetic mode (FM 3.5.1.2): the scaled and limited 16-bit word goes to bus
 				// bits 15..0, bus bits 23..16 carry its sign extension. Limiting triggers exactly when the
 				// value does not fit into 48 bits, i.e. when EXT is not the sign extension of bit 47.
-				if( test < (-140737488355328ll << g_aluShift) )	// ff 8000 0000 0000
+				if( test < -(140737488355328ll << g_aluShift) )	// ff 8000 0000 0000
 				{
 					sr_set( CCR_L );
 					_dst = 0xff8000;
@@ -741,7 +760,7 @@ namespace dsp56k
 				return;
 			}
 
-			if( test < (-140737488355328ll << g_aluShift) )	// ff 800000 000000
+			if( test < -(140737488355328ll << g_aluShift) )	// ff 800000 000000
 			{
 				sr_set( CCR_L );
 				_dst = 0x800000;

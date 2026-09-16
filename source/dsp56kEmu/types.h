@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 #include "dsp56kBase/dspassert.h"
 
 #ifndef CHAR_BIT
@@ -20,6 +21,39 @@ namespace dsp56k
 
 	typedef uint32_t			TWord;
 	typedef uint32_t			TDWord;
+
+	// A left shift of a negative value is undefined in C++17, which is what this
+	// tree builds at, even though every target computes the two's complement
+	// result the emulator wants. Shifting the unsigned representation and
+	// converting back produces exactly that result without the undefined step.
+	template<typename T> constexpr T shiftLeft(const T _value, const unsigned int _shift)
+	{
+		return static_cast<T>(static_cast<typename std::make_unsigned<T>::type>(_value) << _shift);
+	}
+
+	// A rotate written as a pair of shifts has to shift the complementary operand by
+	// the full width of the type when the rotate amount is zero, and a shift by the
+	// width is undefined. Masking the complementary amount as well keeps both shifts
+	// inside the width and makes a zero rotate the identity it is meant to be.
+	template<typename T> constexpr T rotateLeft(const T _value, const unsigned int _shift)
+	{
+		using Unsigned = typename std::make_unsigned<T>::type;
+		constexpr unsigned int width = sizeof(T) * CHAR_BIT;
+		const unsigned int left = _shift & (width - 1);
+		const unsigned int right = (width - left) & (width - 1);
+		const auto value = static_cast<Unsigned>(_value);
+		return static_cast<T>(static_cast<Unsigned>((value << left) | (value >> right)));
+	}
+
+	template<typename T> constexpr T rotateRight(const T _value, const unsigned int _shift)
+	{
+		using Unsigned = typename std::make_unsigned<T>::type;
+		constexpr unsigned int width = sizeof(T) * CHAR_BIT;
+		const unsigned int right = _shift & (width - 1);
+		const unsigned int left = (width - right) & (width - 1);
+		const auto value = static_cast<Unsigned>(_value);
+		return static_cast<T>(static_cast<Unsigned>((value >> right) | (value << left)));
+	}
 
 	template<typename T,unsigned int B> struct RegType
 	{
@@ -121,11 +155,11 @@ namespace dsp56k
 	// -----------------------
 
 	// Move to accumulator
-	static void convert( TReg56& _dst, const TReg8& _src )			{ _dst.var = _src.signextend<TReg56::MyType>()<<40; _dst.doMasking(); }
-	static void convert( TReg56& _dst, const TReg24& _src )			{ _dst.var = _src.signextend<TReg56::MyType>()<<24; _dst.doMasking(); }
+	static void convert( TReg56& _dst, const TReg8& _src )			{ _dst.var = shiftLeft(_src.signextend<TReg56::MyType>(), 40); _dst.doMasking(); }
+	static void convert( TReg56& _dst, const TReg24& _src )			{ _dst.var = shiftLeft(_src.signextend<TReg56::MyType>(), 24); _dst.doMasking(); }
 	static void convert( TReg56& _dst, const TReg48& _src )			{ _dst.var = _src.signextend<TReg56::MyType>(); _dst.doMasking(); }
 	static void convert( TReg56& _dst, const TWord& _src )			{ _dst.var = static_cast<TReg56::MyType>(_src)<<24; }
-	static void convert( TReg56& _dst, const TInt32& _src )			{ _dst.var = static_cast<TReg56::MyType>(_src)<<24; }
+	static void convert( TReg56& _dst, const TInt32& _src )			{ _dst.var = shiftLeft(static_cast<TReg56::MyType>(_src), 24); }
 	static void convert( TReg56& _dst, const TInt64& _src )			{ _dst.var = _src & TReg56::bitMask; }
 	static void convert( TReg56& _dst, const TUInt64& _src )		{ _dst.var = _src & TReg56::bitMask; }
 

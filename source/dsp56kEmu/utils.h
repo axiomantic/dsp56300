@@ -140,7 +140,7 @@ namespace dsp56k
 	template<typename T,size_t numBitsSrc> T signextend(const T _src)
 	{
 		const T shiftAmount = (sizeof(T) * CHAR_BIT) - numBitsSrc;
-		return (T(_src) << shiftAmount) >> shiftAmount;
+		return shiftLeft(T(_src), static_cast<unsigned int>(shiftAmount)) >> shiftAmount;
 	}
 
 	static TUInt8 bitreverse8( TUInt8 a )
