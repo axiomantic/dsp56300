@@ -308,31 +308,39 @@ namespace dsp56k
 		m_block.asm_().lea_(r64(_dst), r64(regDspPtr), &m_block.dsp(), &m_block.dsp().regs());
 	}
 
+	// An address at or above the top of a memory area is decoded by no device on the
+	// real chip: the core memory map has exactly one internal region per data space,
+	// with external space above it and no second copy of internal memory (DSP56300
+	// Family Manual rev. 5, section 11.1, Figure 11-1). Folding the offset back into
+	// the area therefore models something the hardware does not do, and it hands the
+	// guest a live word belonging to an unrelated address. The value a real chip
+	// returns is not documented, so this picks the one the interpreter has always
+	// produced, which changes one engine instead of two.
+	void Jitmem::readDspMemoryBoundsChecked(DspValue& _dst, const MemoryRef& _p, const JitRegGP& _offset, const TWord _size) const
+	{
+		auto& a = m_block.asm_();
+
+		// The zero lands on the taken side, and _dst may be carrying the base pointer
+		// that _p is built from, so it cannot be pre-cleared before the read.
+		const auto outOfRange = a.newLabel();
+		const SkipLabel done(a);
+
+		a.cmp(r32(_offset), asmjit::Imm(_size));
+		a.jge(outOfRange);
+		readDspMemory(_dst, _p);
+		a.jmp(done.get());
+		a.bind(outOfRange);
+		a.clr(r64(_dst));
+	}
+
 	Jitmem::MemoryRef Jitmem::readDspMemory(DspValue& _dst, const EMemArea _area, const JitRegGP& _offset, MemoryRef&& _ref) const
 	{
-		const SkipLabel skip(m_block.asm_());
-
 		if (!_dst.isRegValid())
 			_dst.temp(DspValue::Memory);
 
 		auto p = getMemAreaPtr(_dst, _area, _offset, std::move(_ref));
 
-		if(!hasMmuSupport())
-		{
-#ifdef HAVE_X86_64
-			if(asmjit::Support::isPowerOf2(m_block.dsp().memory().size(_area)))
-			{
-				// just return garbage in case memory is read from an invalid address
-				m_block.asm_().and_(r32(_offset), asmjit::Imm(asmjit::Imm(m_block.dsp().memory().size(_area)-1)));
-			}
-			else
-#endif
-			{
-				m_block.asm_().cmp(r32(_offset), asmjit::Imm(m_block.dsp().memory().size(_area)));
-				m_block.asm_().jge(skip.get());
-			}
-		}
-		readDspMemory(_dst, p);
+		readDspMemoryBoundsChecked(_dst, p, _offset, m_block.dsp().memory().size(_area));
 
 		return p;
 	}
@@ -350,40 +358,48 @@ namespace dsp56k
 		if (!_dstY.isRegValid())
 			_dstY.temp(DspValue::Memory);
 
-		const SkipLabel skip(m_block.asm_());
+		auto& a = m_block.asm_();
 
-		if(!hasMmuSupport())
+		// Same rule as the single-area read: out of range yields zero rather than a
+		// folded-back word. Both halves of the parallel move take it together, because
+		// one offset addresses both.
+		const auto outOfRange = a.newLabel();
+		const SkipLabel done(a);
+
+		a.cmp(r32(_offset), asmjit::Imm(m_block.dsp().memory().sizeXY()));
+		a.jge(outOfRange);
+
 		{
-#ifdef HAVE_X86_64
-			if (asmjit::Support::isPowerOf2(m_block.dsp().memory().sizeXY()))
-			{
-				// just return garbage in case memory is read from an invalid address
-				m_block.asm_().and_(r32(_offset), asmjit::Imm(asmjit::Imm(m_block.dsp().memory().sizeXY() - 1)));
-			}
-			else
-#endif
-			{
-				m_block.asm_().cmp(r32(_offset), asmjit::Imm(m_block.dsp().memory().sizeXY()));
-				m_block.asm_().jge(skip.get());
-			}
+			auto px = getMemAreaPtr(_dstX, MemArea_X, _offset, noRef());
+			readDspMemory(_dstX, px);
+
+			auto py = getMemAreaPtr(_dstY, MemArea_Y, _offset, std::move(px));
+			readDspMemory(_dstY, py);
 		}
 
-		auto px = getMemAreaPtr(_dstX, MemArea_X, _offset, noRef());
-		readDspMemory(_dstX, px);
-
-		auto py = getMemAreaPtr(_dstY, MemArea_Y, _offset, std::move(px));
-		readDspMemory(_dstY, py);
+		a.jmp(done.get());
+		a.bind(outOfRange);
+		a.clr(r64(_dstX));
+		a.clr(r64(_dstY));
 	}
 
 	Jitmem::MemoryRef Jitmem::readDspMemory(DspValue& _dstX, DspValue& _dstY, const TWord& _offset) const
 	{
-		if (_offset >= m_block.dsp().memory().sizeXY())
-			return noRef();
-
 		if (!_dstX.isRegValid())
 			_dstX.temp(DspValue::Memory);
 		if (!_dstY.isRegValid())
 			_dstY.temp(DspValue::Memory);
+
+		// A guest address known out of range at compile time reaches the same zero as
+		// one that only turns out to be out of range at run time. Leaving the
+		// destinations alone instead would hand the caller whatever the temporaries
+		// happened to hold.
+		if (_offset >= m_block.dsp().memory().sizeXY())
+		{
+			m_block.asm_().clr(r64(_dstX));
+			m_block.asm_().clr(r64(_dstY));
+			return noRef();
+		}
 
 		auto memRefX = getMemAreaPtr(MemArea_X, _offset, noRef(), false);
 		readDspMemory(_dstX, memRefX);
@@ -403,15 +419,18 @@ namespace dsp56k
 		const auto& mem = m_block.dsp().memory();
 		mem.memTranslateAddress(_area, _offset);
 
-		assert(_offset < mem.size(_area) && "memory address out of range");
-
-		if (_offset >= mem.size(_area))
-			return std::move(_ref);
-
-		auto p = getMemAreaPtr(_area, _offset, std::move(_ref), false);
-
 		if (!_dst.isRegValid())
 			_dst.temp(DspValue::Memory);
+
+		// An out-of-range constant is legal guest code, not an emulator defect, so it
+		// reaches the same zero the run-time check produces rather than an assertion.
+		if (_offset >= mem.size(_area))
+		{
+			m_block.asm_().clr(r64(_dst));
+			return std::move(_ref);
+		}
+
+		auto p = getMemAreaPtr(_area, _offset, std::move(_ref), false);
 
 		readDspMemory(_dst, p);
 
