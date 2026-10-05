@@ -29,6 +29,7 @@ essi.cpp essi.h
 esxi.cpp esxi.h
 gpio.cpp gpio.h
 hdi08.cpp hdi08.h
+hdi08HostPort.cpp hdi08HostPort.h
 hdi08queue.cpp hdi08queue.h
 haltDSP.cpp haltDSP.h
 hi08.h
@@ -141,3 +142,5 @@ endif()
 # This should use ${PROJECT_SOURCE_DIR}/source if the top level of the repo
 # has the top level cmakelists.txt file.
 target_include_directories(dsp56kEmu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+add_subdirectory(test)
