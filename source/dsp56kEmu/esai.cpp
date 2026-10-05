@@ -39,6 +39,7 @@ namespace dsp56k
 		m_txSlotCounter = 0;
 		m_txFrameCounter = 0;
 		m_txUnderrunSlots = 0;
+		m_txUnderrunInFrame = false;
 		m_rxSlotCounter = 0;
 		m_rxFrameCounter = 0;
 
@@ -90,6 +91,7 @@ namespace dsp56k
 		{
 			m_txFrame.resize(txWordCount + 1);
 			writeTXimpl(m_txFrame);
+			m_txUnderrunInFrame = false;
 			m_txFrame.clear();
 
 			m_txSlotCounter = 0;
@@ -203,6 +205,7 @@ namespace dsp56k
 	void Esai::writeTransmitControlRegister(TWord _val)
 	{
 		m_sr.clear(M_TUE);
+		m_txUnderrunInFrame = false;
 		LOG("Write ESAI TCR " << HEX(_val));
 		const auto tem = getEnabledTransmitters();
 		m_tcr = _val;
@@ -427,6 +430,7 @@ namespace dsp56k
 			}
 			m_txUnderrunSlots |= slotBit;
 			m_sr.set(M_TUE);
+			m_txUnderrunInFrame = true;
 		}
 		else if(m_txUnderrunSlots & slotBit)
 		{
