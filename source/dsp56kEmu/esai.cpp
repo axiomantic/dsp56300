@@ -161,6 +161,9 @@ namespace dsp56k
 		{
 			m_rxSlotCounter = 0;
 			++m_rxFrameCounter;
+
+			if(m_rcr.test(M_RLIE))
+				injectInterrupt(Vba_ESAI_Receive_Last_Slot);
 		}
 	}
 
