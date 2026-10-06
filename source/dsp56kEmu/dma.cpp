@@ -11,8 +11,10 @@
 
 #include "interrupts.h"
 
-#if 0
+// execTransfer reports an unsupported address generation mode through LOG
 #include "dsp56kBase/logging.h"
+
+#if 0
 #define LOGDMA(S) LOG(S)
 #else
 #define LOGDMA(S) do{}while(0)
@@ -846,8 +848,29 @@ namespace dsp56k
 			}
 		}
 
-		assert(false && "DMA transfer mode not supported yet");
-		return true;
+		if(agmD == AddressGenMode::SingleCounterApostInc && agmS <= AddressGenMode::DualCounterDOR3)
+		{
+			// 2D source addressing: apply DOR offset to source address after each line.
+			const auto tm = getTransferMode();
+			const auto isLineTransfer = tm == TransferMode::LineTriggerRequestClearDE;
+
+			do
+			{
+				memWrite(areaD, m_ddr, memRead(areaS, m_dsr));
+				++m_ddr;
+
+				if(dualModeIncrement(m_dsr, m_dma.getDOR(static_cast<int>(agmS))))
+					return true;
+			}
+			while(isLineTransfer && m_dcol != m_dcolInit);
+
+			return false;
+		}
+
+		// Unsupported address generation mode: log diagnostic and abort transfer without completing block.
+		LOG("DMA channel " << m_index << " unsupported address generation mode, DCR is " << HEX(m_dcr) << ", DAM is " << HEXN(getDAM(), 2) << ", no transfer performed");
+
+		return false;
 	}
 
 	void DmaChannel::finishTransfer()
