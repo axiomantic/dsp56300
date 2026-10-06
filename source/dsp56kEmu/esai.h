@@ -375,6 +375,8 @@ namespace dsp56k
 
 		uint32_t getTxFrameCounter() const { return m_txFrameCounter; }
 
+		bool txUnderrunInFrame() const noexcept { return m_txUnderrunInFrame; }
+
 		uint32_t getTxWordCount() const
 		{
 			return (m_tccr & M_TDC) >> M_TDC0;
@@ -470,6 +472,7 @@ namespace dsp56k
 		uint32_t m_txSlotCounter = 0;
 		uint32_t m_txFrameCounter = 0;
 		uint32_t m_txUnderrunSlots = 0;				// bit per transmit slot that underran when it was last sent
+		bool m_txUnderrunInFrame = false;
 		uint32_t m_rxSlotCounter = 0;
 		uint32_t m_rxFrameCounter = 0;
 
