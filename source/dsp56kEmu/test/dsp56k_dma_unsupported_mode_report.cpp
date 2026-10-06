@@ -1,26 +1,5 @@
-// An unsupported DMA address generation mode must be REPORTED, in
-// every build type, and must not claim the block completed.
-//
-// The unsupported-mode limb of execTransfer was `assert(false && "DMA
-// transfer mode not supported yet"); return true;`. NDEBUG deletes the
-// assert, so a Release build dropped the transfer in complete silence and
-// then told its caller the block had finished - which clears DE and fires
-// the transfer-done interrupt for a transfer that never happened. A
-// mechanism that fails silently fails exactly like a missing one.
-//
-// The report goes through LOG, the same facility esai.cpp uses for its
-// transmit underrun. LOG has no NDEBUG guard: it formats into a stringstream
-// and hands the result to Logging::g_logToConsole, whose target is
-// replaceable through Logging::setLogFunc. That replacement is what this
-// test reads the message out of, and it is also why the message is asserted
-// character for character rather than searched for.
-//
-// The mode under test is source AGM 110 and destination AGM 110, both reserved
-// encodings of the address generation field. A test whose mode is merely
-// unimplemented goes green the moment support arrives and stops guarding
-// anything, which is what happened to the "no update" pair this test used to
-// name. A reserved encoding has no transfer to implement, so the report stays
-// the only right answer.
+// Verify that unsupported DMA address generation modes report an error via LOG
+// and do not complete the transfer or clear DE.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"

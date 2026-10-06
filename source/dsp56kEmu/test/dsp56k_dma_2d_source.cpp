@@ -1,32 +1,5 @@
-// The two-dimensional SOURCE transfer, which the G2 kernel programs.
-//
-// execTransfer handled a 2D DESTINATION (SingleCounterApostInc source, AGM
-// 0-3 destination) and nothing on the mirrored side. A booted G2 kernel
-// programs the mirror on every DSP: DCR $965AA0 on channel 2, i.e. DAM $2A,
-// so DAM[2:0]=010 (source, two-dimensional, offset DOR2) and DAM[5:3]=101
-// (destination, post-increment by 1), D3D=0, DTM=010 line transfer,
-// DRS=01011 ESAI receive data, with DSR = $FFFFA8 (ESAI RX0), DOR2 =
-// $FFFFFF (-1) and DCO = $007001. Channel 3 carries $96AAA1, the same DAM
-// against the second ESAI. That combination fell through to the
-// unsupported-mode limb.
-//
-// The shape is Table 10-5 of the DSP56362 user manual read in the other
-// direction. That table configures a DAX transmit: the peripheral side is
-// the two-dimensional one, its DOR is negative so the address returns to
-// the first peripheral register after each frame, DCOL is "number of
-// registers - 1" and DCOH is "number of frames in block - 1". A receive
-// swaps which side is the peripheral, not the counter arithmetic.
-//
-// This test uses plain X memory on both sides so the two words the 2D side
-// walks over carry values this test chose. DOR2 is -1 and the two source
-// words differ, so a handler that failed to apply the offset would copy the
-// second word twice and a handler that applied it to the wrong side would
-// leave the destination stationary. Neither survives the assertions below.
-//
-// Limit: line-triggered request transfers in X space on a Peripherals56311,
-// ESAI transmit as the request source because its TDE flag is set at
-// construction. Word mode, other spaces and the three-dimensional modes are
-// outside this test's claim.
+// Verify 2D source addressing mode transfers (SingleCounterApostInc destination,
+// DualCounterDOR0-3 source) with line triggering per DSP56300FM Section 10.3.3.2.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"

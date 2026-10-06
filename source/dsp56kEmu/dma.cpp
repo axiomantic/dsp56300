@@ -850,13 +850,7 @@ namespace dsp56k
 
 		if(agmD == AddressGenMode::SingleCounterApostInc && agmS <= AddressGenMode::DualCounterDOR3)
 		{
-			// The mirror of the limb above: the SOURCE is the two-dimensional
-			// side and AGM 0-3 select the DOR slot whose offset is applied
-			// after each line. This is what an ESAI receive programs - the
-			// source walks the peripheral's receive registers and returns to
-			// the first one via a negative offset, while the destination runs
-			// linearly through a memory block.
-
+			// 2D source addressing: apply DOR offset to source address after each line.
 			const auto tm = getTransferMode();
 			const auto isLineTransfer = tm == TransferMode::LineTriggerRequestClearDE;
 
@@ -873,15 +867,7 @@ namespace dsp56k
 			return false;
 		}
 
-		// NDEBUG deletes an assert, so an assert here reported nothing at all
-		// in a Release build and the `return true` below it then told the
-		// caller a block had completed - clearing DE and firing the
-		// transfer-done interrupt for a transfer that never happened. LOG is
-		// the facility esai.cpp already reports an unexpected state through
-		// and it is compiled into every build type.
-		//
-		// The answer is false because false is the true one: no word moved, so
-		// the block did not finish. finishTransfer must not run.
+		// Unsupported address generation mode: log diagnostic and abort transfer without completing block.
 		LOG("DMA channel " << m_index << " unsupported address generation mode, DCR is " << HEX(m_dcr) << ", DAM is " << HEXN(getDAM(), 2) << ", no transfer performed");
 
 		return false;
