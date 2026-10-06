@@ -107,7 +107,9 @@ namespace dsp56k
 	{
 		const auto lenA = _instA != Invalid ? dsp56k::getOpcodeLength(_instA, _op) : 0;
 		const auto lenB = _instB != Invalid ? dsp56k::getOpcodeLength(_instB, _op) : 0;
-		return std::max(lenA, lenB);
+
+		// Floor to 1 word so unrecognised opcodes advance PC rather than looping infinitely.
+		return std::max(std::max(lenA, lenB), 1u);
 	}
 
 	bool Opcodes::writesToPMemory(const TWord _op) const

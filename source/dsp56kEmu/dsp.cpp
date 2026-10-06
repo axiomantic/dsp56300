@@ -58,6 +58,10 @@ namespace dsp56k
 	{
 		_dsp->execInterrupts();
 	}
+	void dspExecIllegalInstructionInterrupt(DSP* _dsp) noexcept
+	{
+		_dsp->execIllegalInstructionInterrupt();
+	}
 	template <typename Ta, typename Tb> void dspExecPeripherals(DSP* _dsp) noexcept
 	{
 		_dsp->execPeriph<Ta, Tb>();
@@ -278,6 +282,40 @@ namespace dsp56k
 				m_processingMode = DefaultPreventInterrupt;
 				m_interruptFunc = &dspExecDefaultPreventInterrupt;
 			}
+		}
+
+		// Service pending illegal instruction interrupt upon exiting uninterruptible routine.
+		if(m_illegalInstructionPending)
+		{
+			if(vba == Vba_Illegalinstruction)
+				scheduleIllegalInstructionInterrupt();
+			else
+				execIllegalInstructionInterrupt();
+		}
+	}
+
+	void DSP::scheduleIllegalInstructionInterrupt()
+	{
+		m_interruptFunc = &dspExecIllegalInstructionInterrupt;
+	}
+
+	void DSP::execIllegalInstructionInterrupt()
+	{
+		m_illegalInstructionPending = false;
+
+		const auto interruptedLongInterrupt = m_processingMode == LongInterrupt;
+
+		execInterrupt(Vba_Illegalinstruction);
+
+		// Restore LongInterrupt processing mode if a fast routine was executed.
+		if(interruptedLongInterrupt && m_processingMode != LongInterrupt)
+		{
+			m_processingMode = LongInterrupt;
+
+			if(m_illegalInstructionPending)
+				scheduleIllegalInstructionInterrupt();
+			else
+				m_interruptFunc = &dspExecNop;
 		}
 	}
 
