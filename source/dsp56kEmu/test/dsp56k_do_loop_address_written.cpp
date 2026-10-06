@@ -1,33 +1,5 @@
-// Tier T0: the guest programs live in this file as assembler invocations plus one
-// pinned literal; no firmware, kernel or .pch2 corpus is touched, so the check runs
-// with NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. LA is a writable register (DSP56300 Family Manual rev 2.0,
-// Loop Address Register, p.5-13), so a guest may move the end of a loop that is
-// already running. DSP::do_execImpl compares the PC against the live reg.la on
-// every pass and therefore honours such a write on the pass that follows it. The
-// JIT derives the end of a loop from the operand word of the DO instruction when
-// it compiles the block, so a write to LA has to reach the block boundaries and
-// the loop table as well, or the JIT keeps running the loop the program used to
-// have.
-//
-// The write goes through MOVEP because that is the instruction whose peripheral to
-// register direction declared no register effects at all, which is what kept the
-// JIT from noticing. Its destination here is LA, where an undeclared write changes
-// control flow rather than data.
-//
-// BOTH ENGINES ARE DRIVEN. g_useJIT is a compile-time constant, so DSP::exec()
-// reaches only one of the two engines on any given build. The interpreter is
-// driven through the public DSP::execInterpreter() directly, and the JIT through
-// DSP::exec() guarded by g_useJIT.
-//
-// THE MIRAGE THIS TEST REFUSES. Asserting only that the loop eventually left, or
-// that the instructions past the original end ran at all, passes against an engine
-// that ignores the write: once a loop retires at the end it was compiled with,
-// execution falls through the extension anyway. Both programs therefore record a
-// value that can only be produced from INSIDE the extended loop -- the moved LA in
-// the first, the live loop count in the second -- against a sentinel the engine
-// that ignores the write leaves standing.
+// Test that runtime writes to the Loop Address (LA) register are honoured in both
+// interpreter and JIT per DSP56300 Family Manual, Loop Address Register (LA).
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"
