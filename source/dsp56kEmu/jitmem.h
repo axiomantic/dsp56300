@@ -133,6 +133,7 @@ namespace dsp56k
 		void mov(DspValue& _dst, const JitMemPtr& _src) const;
 
 		void readDspMemory(DspValue& _dst, const MemoryRef& _src) const;
+		void readDspMemoryBoundsChecked(DspValue& _dst, const MemoryRef& _p, const JitRegGP& _offset, TWord _size) const;
 		void writeDspMemory(const JitMemPtr& _dst, const DspValue& _src) const;
 		void writeDspMemory(const MemoryRef& _dst, const DspValue& _src) const;
 
