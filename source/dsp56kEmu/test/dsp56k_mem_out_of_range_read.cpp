@@ -1,30 +1,4 @@
-// Tier T0: the guest program lives in this file as assembler invocations; no
-// firmware, kernel or .pch2 corpus is touched, so the check runs with
-// NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. That a data-memory read from an address above the top of
-// the configured memory yields the SAME word under the interpreter and under
-// the JIT, and that it does not read the contents of a valid address.
-//
-// WHY ZERO. The DSP56300 Family Manual rev. 5 does not define the data returned
-// by such a read. What it does define is that the address does not fold back
-// into internal RAM: Figure 11-1 (§11.1, p. 11-2) gives exactly one Internal
-// region per data space, at the bottom, and §11.1.3.2 / §11.1.4.4 (pp. 11-5,
-// 11-6) place External above it up to the reserved range. So an aliased word is
-// excluded as a model of the hardware, while a fixed value is merely
-// unspecified. Zero is the value the interpreter has always produced, so
-// choosing it changes one engine rather than two.
-//
-// THE MIRAGE THIS TEST REFUSES. Asserting only that the two engines agree
-// passes against an implementation in which both alias the same in-range word.
-// The check therefore pins the value AND pins the in-range word the aliasing
-// would have exposed: g_addrAlias is seeded with a marker that must not appear
-// in the result, and must itself survive the out-of-range write.
-//
-// BOTH ENGINES ARE DRIVEN. g_useJIT is a compile-time constant, so DSP::exec()
-// reaches only one of the two engines on any given build. The interpreter is
-// therefore driven through the public DSP::execInterpreter() directly, and the
-// JIT through DSP::exec() guarded by g_useJIT.
+// Test that out-of-range data memory reads yield zero in both interpreter and JIT.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/memory.h"
@@ -120,23 +94,12 @@ namespace
 			_dsp.memWriteP(_addr + i, _words[i]);
 	}
 
-	// The guest program. Two markers are planted first so that neither candidate
-	// wrong answer can be mistaken for the right one: g_markerAlias occupies the
-	// address that masking would fold onto, and g_markerOutOfRange is written
-	// through the out-of-range address itself, which populates whatever scratch
-	// storage the write path may reach.
-	//
-	//   move #>$0f0000,r1
-	//   move #>$555555,x0
-	//   move x0,x:(r1)
-	//   move #>$8f0000,r0
-	//   move #>$aaaaaa,x0
-	//   move x0,x:(r0)
-	//   move x:(r0),x0
-	//   move x0,x:$3e
-	//   ... the same again through L: memory, which reads X and Y from one
-	//   ... offset and so takes the parallel read path rather than the single one
-	//   nop                  <- halt lands here
+	// Assemble guest test program exercising single X: and parallel L: out-of-range reads:
+	//   move #>g_addrAlias,r1; move #>g_markerAlias,x0; move x0,x:(r1)
+	//   move #>g_addrOutOfRange,r0; move #>g_markerOutOfRange,x0; move x0,x:(r0)
+	//   move x:(r0),x0; move x0,x:$3e
+	//   ... parallel L: read ...
+	//   nop
 	struct Program
 	{
 		static constexpr TWord base = 0x100;
@@ -237,9 +200,6 @@ namespace
 			seedObservables(f);
 			f.dsp.setPC(Program::base);
 
-			// One JIT block per exec(). The program is straight-line, so a handful of
-			// calls covers it; the bound turns a regression that fails to advance into
-			// a red rather than a hang.
 			constexpr uint32_t maxExecCalls = 64;
 			uint32_t execCalls = 0;
 
@@ -270,8 +230,6 @@ namespace
 		if(!jitRan)
 			return;
 
-		// Not an in-range word the address would fold onto, and not a word an
-		// out-of-range write carried.
 		verify(jitted.single != g_markerAlias && jitted.single != g_markerOutOfRange);
 		verify(jitted.longX != g_markerAlias && jitted.longX != g_markerOutOfRange);
 		verify(jitted.longY != g_markerAliasY && jitted.longY != g_markerOutOfRangeY);
