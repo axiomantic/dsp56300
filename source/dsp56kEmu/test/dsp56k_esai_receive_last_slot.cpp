@@ -1,12 +1,5 @@
-// RCR bit 23 (RLIE) arms the ESAI receive last slot interrupt. The DSP56362
-// user manual, section 8.4.3 item 4, places the request "after the last slot of
-// the frame ended [...] regardless of the receive mask register setting", which
-// is the frame wrap and not the slot.
-//
-// The vector is identified rather than merely counted: each candidate vector
-// carries a distinct `move #vector,x0`, so a request routed to the wrong vector
-// leaves a different marker than a request routed to the right one, and no
-// request at all leaves the sentinel this fixture wrote into x0.
+// Verify ESAI receive last slot interrupt generation when RCR[RLIE] is enabled
+// per DSP56367UM Section 11.3.2.2.
 
 #include "dsp56kEmu/assembler.h"
 #include "dsp56kEmu/dsp.h"
@@ -178,9 +171,7 @@ namespace
 		verify(f.marker() == markerFor(Vba_ESAI_Receive_Last_Slot));
 	}
 
-	// The paired negative. Without it the change is an unguarded firehose: an
-	// injection that ignores RLIE would interrupt on every frame of every
-	// receiver the DSP ever enables.
+	// Verify no interrupt is raised when RLIE is clear.
 	void thePrimaryEsaiRaisesNothingWhenRlieIsClear()
 	{
 		Fixture f;
@@ -200,8 +191,7 @@ namespace
 		verify(f.marker() == g_noMarker);
 	}
 
-	// "after the last slot of the frame ended" - once per frame, not once per
-	// slot. An injection placed outside the wrap branch fires on slot 1 of 4.
+	// Verify interrupt arrives at frame boundary and not on intermediate slots.
 	void theRequestArrivesOnTheFrameWrapAndNotOnEverySlot()
 	{
 		constexpr TWord slotsPerFrame = 4;
@@ -229,8 +219,7 @@ namespace
 		verify(f.marker() == markerFor(Vba_ESAI_Receive_Last_Slot));
 	}
 
-	// "regardless of the receive mask register setting" - the last slot of the
-	// frame being masked out does not suppress the request.
+	// Verify interrupt is generated regardless of receive slot mask settings.
 	void theRequestIgnoresTheReceiveSlotMask()
 	{
 		constexpr TWord slotsPerFrame = 2;
@@ -255,9 +244,7 @@ namespace
 		verify(f.marker() == markerFor(Vba_ESAI_Receive_Last_Slot));
 	}
 
-	// The second bus's vector base is offset by
-	// Vba_ESAI_1_Receive_Data - Vba_ESAI_Receive_Data. A request that reached
-	// $36 instead of $76 would leave the firmware waiting.
+	// Verify second ESAI peripheral routes to Vba_ESAI_1_Receive_Last_Slot.
 	void theSecondEsaiRaisesTheEsai1LastSlotVector()
 	{
 		Fixture f;
