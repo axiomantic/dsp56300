@@ -178,13 +178,7 @@ namespace dsp56k
 
 			opcodes.getInstructionTypes(opA, instA, instB);
 
-			/*	A word that matches no encoding is an undefined operation code. Silicon does not stop on
-				one: it runs it as ILLEGAL, a NOP followed by the Illegal Instruction Interrupt (DSP56300
-				Family Manual Rev. 5, 2.3.2.2 and ILLEGAL), and the vector decides what happens next.
-				Classifying the word as ILLEGAL gives it the length, registers and cycles of that
-				instruction, so the walk advances by one word and the block that holds it is never
-				empty.
-			*/
+			// Undefined opcode runs as ILLEGAL (NOP followed by Illegal Instruction Interrupt).
 			if(isUndecodable(instA, instB))
 				instA = Illegal;
 
@@ -415,9 +409,7 @@ namespace dsp56k
 				break;
 			}
 
-			// The interrupt is serviced between blocks, so ending the block here services it before
-			// the next instruction runs rather than at whatever ends the block later. A fast interrupt
-			// block is exempt: it must hold both vector words, and a fast interrupt is not interruptible.
+			// End block at ILLEGAL to service interrupt before subsequent instructions run.
 			if(instA == Illegal && !isFastInterrupt)
 			{
 				terminationReason = JitBlockInfo::TerminationReason::IllegalInstruction;

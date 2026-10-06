@@ -312,18 +312,7 @@ namespace dsp56k
 			oiAlu = m_opcodes.findParallelAluOpcodeInfo(_op);
 			if(!oiAlu)
 			{
-				/*	Unlike the two cases above, this one does not dereference what it failed to
-					find: every use of oiAlu below is guarded, so the block still generates and
-					performs the parallel move while dropping the ALU operation. That makes it a
-					wrong answer rather than a crash, and a wrong answer that a release build did
-					not report at all, because the assert here expanded to nothing.
-
-					It is reported and NOT raised. Raising it would turn every such word into a
-					fatal error, and unlike an undescribed word these words do generate a block
-					that runs today - firmware that currently executes one would stop working. What
-					the dropped ALU operation should be is a separate question from making the
-					block walk terminate, so this only ensures the answer is not silent.
-				*/
+				// Log missing parallel ALU opcode and emit parallel move alone.
 				fprintf(stderr, "*** JIT: no ALU operation matches $%06X at P:$%06X,"
 					" emitting the parallel move alone\n", _op, _pc);
 				fflush(stderr);
@@ -462,19 +451,9 @@ namespace dsp56k
 
 	void JitOps::errIllegalInstruction(const TWord _pc, const TWord op)
 	{
-		// The address as well as the word: the same undescribed word occurs at many addresses in
-		// one image, so the word alone does not say which block failed to generate.
 		fprintf(stderr, "*** JIT errIllegalInstruction: opcode=$%06X at P:$%06X\n", op, _pc);
 		fflush(stderr);
-
-		/*	A bare assert() expands to nothing without _DEBUG, and the caller would then dereference
-			the null OpcodeInfo it failed to find: a crash that says nothing about which word or which
-			address caused it. Raising here ends the run with both in the log.
-		*/
 		Assert::show("illegal instruction", __func__, __LINE__);
-
-		// Assert::show logs and throws on most platforms, but on Windows it returns. Returning to
-		// the caller lands on the null dereference this replaces.
 		throw std::runtime_error("illegal instruction");
 	}
 

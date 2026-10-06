@@ -284,11 +284,7 @@ namespace dsp56k
 			}
 		}
 
-		/*	An undefined word inside the routine raised the interrupt while the routine could not be
-			interrupted. The caller runs the next instruction or JIT block as soon as this returns, so the
-			interrupt is serviced here. When the routine is the illegal instruction vector itself, servicing
-			here would recurse for as long as the vector raises again; that case takes the next call instead.
-		*/
+		// Service pending illegal instruction interrupt upon exiting uninterruptible routine.
 		if(m_illegalInstructionPending)
 		{
 			if(vba == Vba_Illegalinstruction)
@@ -300,12 +296,6 @@ namespace dsp56k
 
 	void DSP::scheduleIllegalInstructionInterrupt()
 	{
-		/*	The queue behind m_interruptFunc cannot service this interrupt on time. A masked source at its
-			head stops it, a long interrupt routine replaces it with a function that services nothing until
-			RTI, and after each service it runs one more instruction, or one more JIT block, before looking
-			again. An IPL 3 interrupt that must be serviced before the next instruction is subject to none of
-			that, so it takes the next call itself.
-		*/
 		m_interruptFunc = &dspExecIllegalInstructionInterrupt;
 	}
 
@@ -317,8 +307,7 @@ namespace dsp56k
 
 		execInterrupt(Vba_Illegalinstruction);
 
-		// A fast routine ends by allowing interrupts again, which would unmask the long routine it
-		// interrupted. That routine still runs at its raised level until its own RTI.
+		// Restore LongInterrupt processing mode if a fast routine was executed.
 		if(interruptedLongInterrupt && m_processingMode != LongInterrupt)
 		{
 			m_processingMode = LongInterrupt;

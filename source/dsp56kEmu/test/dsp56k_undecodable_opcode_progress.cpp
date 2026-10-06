@@ -1,39 +1,4 @@
-// Tier T0: the guest program is written into P memory word by word from this file; no
-// firmware, kernel or .pch2 corpus is touched, so the check runs with NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. JitBlock::getInfo walks forward from a PC one instruction at a time and
-// advances by Opcodes::getOpcodeLength. A word that matches no entry in the opcode table
-// decodes to no instruction at all, and getOpcodeLength had nothing to measure for it, so it
-// returned 0. The walk then recomputed the same address, read the same word, and did it again:
-// no error, no exception, no output, and no exit. The only escape was
-// JitConfig::maxInstructionsPerBlock, which is 0 -- off -- by default.
-//
-// The population is not a corner. Of the 16,777,216 values a 24 bit instruction word can take,
-// 366,724 decode to nothing, and the set of words that decode to nothing is exactly the set for
-// which getOpcodeLength returned 0. So this was reachable from 2.19% of the encoding space, at
-// any address, with a stall that looks from outside like a run that is still working.
-//
-// WHAT EACH CASE EXERCISES.
-//
-//   theLengthOfAnUndecodableWordIsNotZero -- getOpcodeLength itself, which is where the floor
-//   is. Three callers add its return to a program counter, one of them the debugger's
-//   disassembly walk, so the guarantee belongs at the source rather than at each caller.
-//
-//   decodableWordsKeepTheirLength -- the control for the case above. The floor must not have
-//   moved a length that was already correct, including the two word case.
-//
-//   anUndecodableWordTerminatesTheBlockWalk -- the walk. Before the fix this call does not
-//   return; the test binary is registered with a CTest TIMEOUT, which is what turns a stall
-//   into a red rather than into a run that is still going. The walk takes the word as ILLEGAL,
-//   one word long, and ends the block after it, so the case pins that block.
-//
-//   ordinaryCodeStillProducesTheSameBlock -- the known positive for the walk. A block over
-//   decodable code has to come out byte for byte as it did, so this pins its termination
-//   reason, word count and instruction count rather than merely observing that it returned.
-//
-// HOW IT FAILS. Without the fix, anUndecodableWordTerminatesTheBlockWalk spins until CTest's
-// TIMEOUT kills it, and theLengthOfAnUndecodableWordIsNotZero fails outright with 0 != 1.
-// What executing the word does is dsp56k_undefined_word_illegal_interrupt's subject.
+// Test that undecodable instruction words have a minimum length of 1 word and terminate the JIT block walk.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/jit.h"
