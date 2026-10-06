@@ -110,6 +110,16 @@ namespace dsp56k
 		Jit::toJitPtr(_jit)->runCheckPMemWriteAndModeChange(_pc);
 	}
 
+	void funcRunCheckLoopEnd(JitDspPtr* _jit, const TWord _pc) noexcept
+	{
+		Jit::toJitPtr(_jit)->runCheckLoopEnd(_pc);
+	}
+
+	void funcRunCheckLoopEndAndModeChange(JitDspPtr* _jit, const TWord _pc) noexcept
+	{
+		Jit::toJitPtr(_jit)->runCheckLoopEndAndModeChange(_pc);
+	}
+
 	void funcRun(JitDspPtr* _jit, TWord _pc) noexcept
 	{
 		Jit::toJitPtr(_jit)->run(_pc);
@@ -183,14 +193,64 @@ namespace dsp56k
 			addLoop(_info.loopBegin, _info.loopEnd);
 	}
 
+	TWord Jit::activeLoopBegin(const TWord _candidate) const noexcept
+	{
+		const auto& regs = m_dsp.regs();
+
+		if(!(regs.sr.var & SR_LF))
+			return g_invalidAddress;
+
+		// Every DO form carries an address extension word (opcodeinfo.h marks the five Do_*
+		// AbsoluteAddressExt and the four Dor_* PCRelativeAddressExt), so the DO that opened
+		// a loop always sits two words before the loop's first instruction, which is the
+		// address it stacked. JitBlock::getInfo identifies a loop body the same way.
+		//
+		// The running loop's frame is not necessarily on top: a JSR or a long interrupt
+		// taken inside the loop stacks its own return address above it, and the write to LA
+		// that brings us here may well be in that subroutine. Walking down to the first
+		// frame that names a loop finds the innermost one, which is the one LA belongs to. A
+		// return address cannot be mistaken for a loop's: it would have to be the address
+		// after a call occupying the two words the DO occupies.
+		//
+		// Membership of the loop table is what identifies a frame as a loop's, rather than
+		// decoding the opcode: this runs for every block that is created, and decoding costs
+		// a search of the opcode table. _candidate is the loop addLoop is in the middle of
+		// adding, which the table does not hold yet.
+		for(auto index = m_dsp.ssIndex(); index > 0; --index)
+		{
+			const auto stackedPc = hiword(regs.ss[index]).toWord();
+
+			if(stackedPc < 2)
+				continue;
+
+			const auto begin = stackedPc - 2;
+
+			if(begin == _candidate || m_loops.find(begin) != m_loops.end())
+				return begin;
+		}
+
+		return g_invalidAddress;
+	}
+
 	void Jit::addLoop(TWord _begin, TWord _end)
 	{
+		// The operand of a DO names the end the loop STARTS with, not the end it has: LA is
+		// a writable register and a guest may move a running loop's end at any time. The
+		// interpreter compares the PC against the live register on every pass, so for the
+		// loop that is running right now the register is what this table has to agree with.
+		if(_begin == activeLoopBegin(_begin))
+			_end = (static_cast<TWord>(m_dsp.regs().la.var) + 1) & 0xffffff;
+
 		// duplicated entries are allowed as the same code might be generated in multiple chains because it is run in different DSP modes. But in this case, the loop end must be identical
 		const auto itBegin = m_loops.find(_begin);
 
 		if(itBegin != m_loops.end())
 		{
-			assert(itBegin->second == _end);
+			// The end recorded for a loop may legitimately differ from the one another chain
+			// derives for it: a guest may have moved it while the loop ran, and the entry
+			// outlives the run. Whichever of the two is stale, the DO that re-enters the loop
+			// reconciles the table against the live register, so keep what is here rather
+			// than deciding between them now.
 			assert(m_loopEnds.find(itBegin->second) != m_loopEnds.end());
 			return;
 		}
@@ -286,6 +346,18 @@ namespace dsp56k
 		checkModeChange();
 	}
 
+	void Jit::runCheckLoopEnd(const TWord _pc) noexcept
+	{
+		run(_pc);
+		checkLoopEnd();
+	}
+
+	void Jit::runCheckLoopEndAndModeChange(const TWord _pc) noexcept
+	{
+		runCheckLoopEnd(_pc);
+		checkModeChange();
+	}
+
 	JitConfig Jit::getConfig(const TWord _pc) const
 	{
 		auto& globalConfig = getConfig();
@@ -311,6 +383,19 @@ namespace dsp56k
 			if(i.hasFlag(JitBlockInfo::Flags::ModeChange))
 				return &funcRunCheckPMemWriteAndModeChange;
 			return &funcRunCheckPMemWrite;
+		}
+
+		// A block that writes LA may have moved the end of a loop that is still running, and
+		// a DO re-entering a loop whose end was moved on an earlier run has to put the table
+		// back. Any write to LA ends its block, so this is exactly the blocks that end on a
+		// DO or on a write to LA, and nothing else. Selecting a wrapper here also takes the
+		// block out of the set that can be reached by a direct jump from a parent, which is
+		// what makes the check unskippable.
+		if(any(i.writtenRegs, RegisterMask::LA))
+		{
+			if(i.hasFlag(JitBlockInfo::Flags::ModeChange))
+				return &funcRunCheckLoopEndAndModeChange;
+			return &funcRunCheckLoopEnd;
 		}
 
 		if(i.hasFlag(JitBlockInfo::Flags::ModeChange))
@@ -344,6 +429,38 @@ namespace dsp56k
 
 		notifyProgramMemWrite(pMemWriteAddr);
 		m_dsp.notifyProgramMemWrite(pMemWriteAddr);
+	}
+
+	void Jit::checkLoopEnd() noexcept
+	{
+		const auto begin = activeLoopBegin(g_invalidAddress);
+
+		if(begin == g_invalidAddress)
+			return;
+
+		const auto it = m_loops.find(begin);
+
+		if(it == m_loops.end())
+			return;
+
+		const auto end = (static_cast<TWord>(m_dsp.regs().la.var) + 1) & 0xffffff;
+		const auto oldEnd = it->second;
+
+		if(oldEnd == end)
+			return;
+
+		// The old end is baked into the boundary and the epilogue of every block built for
+		// the body, so those blocks have to go. The block holding the DO itself must not:
+		// it is what keeps this loop in the table, and a body block that does not find its
+		// loop there never closes its back edge.
+		removeLoop(begin);
+
+		const auto last = oldEnd > end ? oldEnd : end;
+
+		for(auto pc = begin + 2; pc < last; ++pc)
+			destroy(pc);
+
+		addLoop(begin, end);
 	}
 
 	void Jit::checkModeChange() noexcept
