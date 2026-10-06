@@ -1,24 +1,4 @@
-// Tier T0: the guest program is written into P memory word by word from this file; no
-// firmware, kernel or .pch2 corpus is touched, so the check runs with NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. JitBlock::getInfo scans a REP and the instruction it repeats as one step,
-// because JitOps::rep_exec emits both together. The repeated word is decoded inside that step, not
-// by the walk's own read, so the undecodable-word check that dsp56k_undecodable_opcode_progress
-// covers for the walk has to apply to it separately. Without that, a REP followed by a word the
-// opcode table does not describe passes analysis and reaches the emitter.
-//
-// WHAT EACH CASE EXERCISES.
-//
-//   theRepWordReallyIsARep -- the REP used below decodes to REP #xxx, so the scan of a repeated
-//   instruction is the path being taken and not some other one.
-//
-//   aRepOverDecodableCodeStillProducesTheSameBlock -- the known positive. The same REP over a
-//   decodable instruction analyses as one block with both words counted, and creates without
-//   raising anything.
-//
-//   aRepOverAnUndecodableWordIsReportedAsUndecodable -- the case. Block creation must end with the
-//   same undecodable-instruction-word error the walk raises, naming the repeated word, rather than
-//   any other failure further on.
+// Test that undecodable repeat operands are caught and reported during JIT block analysis.
 
 #include "dsp56kEmu/dsp.h"
 #include "dsp56kEmu/jit.h"

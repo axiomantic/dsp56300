@@ -348,13 +348,7 @@ namespace dsp56k
 	}
 	inline void DSP::op_Illegal(const TWord op)
 	{
-		/*	DSP56300 Family Manual Rev. 5: ILLEGAL "executes as if it were a NOP instruction" and then
-			starts illegal instruction exception processing, and 2.3.2.2 gives any undefined operation
-			code the same Illegal Instruction Interrupt, "serviced immediately after the illegal
-			instruction executes". It is IPL 3, which no mask level blocks and which interrupts a long
-			interrupt routine. A fast interrupt routine is not interruptible, so a raise inside one is
-			serviced by execInterrupt once the routine ends.
-		*/
+		// ILLEGAL executes as NOP, followed by the unmaskable Illegal Instruction Interrupt (IPL 3).
 		if(m_illegalInstructionPending)
 			return;
 

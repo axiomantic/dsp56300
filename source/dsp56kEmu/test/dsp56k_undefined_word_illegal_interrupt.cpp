@@ -1,29 +1,5 @@
-// Tier T0: the guest program is written into P memory word by word from this file; no
-// firmware, kernel or .pch2 corpus is touched, so the check runs with NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. An instruction word that matches no DSP56300 encoding is not a fault of the
-// emulator but a defined event on silicon. DSP56300 Family Manual Rev. 5, 2.3.2.2: the Illegal
-// Instruction Interrupt is "serviced immediately after the illegal instruction executes or attempts
-// to execute (any undefined operation code)". It is IPL 3, so it cannot be masked, and its vector is
-// VBA:$04 (Table 2-2). A vector holding two single-word instructions is a fast interrupt, which
-// "returns without an RTI" and leaves the PC unchanged (2.3.2.8), so execution carries on after the
-// undefined word.
-//
-// The guest is the Nord Modular G2 voice engine entry exactly as the MCU loads it at P:$236-$245.
-// The word at $23d, $000040, is undefined, and $23b/$23c are a two-word move x:>$40,y0 in front of
-// it, so a linear run executes $23d on every pass. A counted DO over $236-$245 stands in for the
-// firmware's DO FOREVER, so that the run ends at a known address after a known number of passes.
-// The G2 image leaves VBA:$04/$05 as two NOPs, which makes the undefined word harmless on the
-// hardware. This test puts move (r7)+ in the first vector word instead, so each service of the
-// interrupt leaves a count in R7.
-//
-// BOTH ENGINES ARE DRIVEN. g_useJIT is a compile-time constant, so the interpreter is driven
-// through the public DSP::execInterpreter() and the JIT through DSP::exec().
-//
-// HOW IT FAILS. Before the change the JIT block walk rejects $23d and the run terminates inside
-// exec(), and the interpreter dereferences the opcode table entry it did not find. A change that
-// steps over the word without raising the interrupt leaves R7 at zero, which the count check
-// rejects.
+// Test that undefined instruction words trigger the Illegal Instruction Interrupt (IPL 3)
+// in both the interpreter and JIT per DSP56300 Family Manual Rev. 5, Section 2.3.2.2.
 
 #include "dsp56kEmu/assembler.h"
 #include "dsp56kEmu/dsp.h"

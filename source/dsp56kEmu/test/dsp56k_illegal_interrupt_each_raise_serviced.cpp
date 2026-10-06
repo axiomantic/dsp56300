@@ -1,29 +1,5 @@
-// Tier T0: the guest program is assembled into P memory from this file; no firmware, kernel or
-// .pch2 corpus is touched, so the check runs with NMG2_ARTIFACTS unset.
-//
-// WHAT IT MEASURES. DSP56300 Family Manual Rev. 5, 2.3.2.2: the Illegal Instruction Interrupt is "serviced
-// immediately after the illegal instruction executes or attempts to execute (any undefined operation
-// code)". It is IPL 3 (Table 2-2), which no mask level blocks, and a long interrupt routine "can be
-// interrupted ... by a higher priority interrupt" (2.3.2.8). So every undefined word the program runs is
-// serviced once, whatever else is pending or running.
-//
-// The order is the emulator's, not the pipeline's. The ILLEGAL page says control returns to "the second
-// word following" the illegal instruction, and in the pipelines of Table 2-7 and Table 2-8 the word after
-// the one that raises executes before the vector. This emulator services every interrupt with no pipeline
-// delay, so the service runs before that word, and the log below requires that order.
-//
-// The vector at VBA:$04 is move r1,x:(r6)+ and a NOP. Each service therefore appends the value R1 holds
-// at that moment to a log in X memory. The program writes a new value into R1 right after an undefined
-// word, so the log shows both how many services happened and whether each one ran before that write.
-//
-// Each scenario is a situation that held a raise back past the next instruction or dropped it:
-//   - nothing else pending: undefined words spaced apart, back to back, and inside a DO body
-//   - a maskable interrupt pending but masked, which stays at the head of the interrupt queue
-//   - the undefined words inside a long interrupt routine, which services nothing until its RTI
-//   - an undefined word inside a fast interrupt routine, which nothing may interrupt
-//
-// BOTH ENGINES ARE DRIVEN. g_useJIT is a compile-time constant, so the interpreter is driven through
-// the public DSP::execInterpreter() and the JIT through DSP::exec().
+// Test that each occurrence of an undefined instruction word triggers and services
+// the Illegal Instruction Interrupt (IPL 3) across varied execution contexts.
 
 #include "dsp56kEmu/assembler.h"
 #include "dsp56kEmu/dsp.h"
